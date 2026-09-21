@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+httpx
+python-dotenv
+pydantic
+pydantic-settings
+motor
+pymongo
+google-genai
+langchain
+langchain-google-genai
+langgraph
+tavily-python
+deepagents
+aiohttp
+websockets
+
