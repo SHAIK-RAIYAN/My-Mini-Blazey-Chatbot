@@ -1,0 +1,699 @@
+Swagger docs :
+PATCH
+/employees-api/employees/{id}
+Update employee (partial PATCH)
+
+
+
+Partial update of a single employee by ObjectId (404 if not found). HR / admin only (authorization-gated). All CreateEmployeeDto fields are accepted but every one is OPTIONAL on PATCH; send only what changes. Enforces field immutability rules before writing (403 when a locked field is changed). When emergency contacts are sent, re-validates exactly one primary contact; recomputes the probation end date, mirrors the address when flagged same-as, and re-resolves the reporting-manager snapshot when the manager changes. A manager reassignment or explicit clear fires notification mail to the affected manager(s) and the employee; no-op resaves send no mail.
+Required path parameters
+id: (REQUIRED): (API call - GET /employees-api/employees/search -> data[*]._id). ObjectId format, the employee document id.
+Required body fields
+(none) Partial PATCH; all body fields are optional.
+Optional body fields
+employmentType: (OPTIONAL): (User). String enum. Enum: REGULAR | CONTRACT | INTERN | CONSULTANT.
+employmentBasis: (OPTIONAL): (API call - GET /setting-api/employment-types -> data[*]._id). Object { _id, name }.
+hireDate: (OPTIONAL): (User). String, date YYYY-MM-DD.
+employmentRegion: (OPTIONAL): (User). String enum. Enum: SOUTH_ASIA | SOUTHEAST_ASIA | MIDDLE_EAST | NORTH_AMERICA | EUROPE | OTHER.
+personalInfo: (OPTIONAL): (User). Same block as create; firstName/lastName/dob/gender/contact are only required when the personalInfo block itself is sent in full.
+personalInfo.contact.workEmail: (OPTIONAL): (User). String, valid email, unique per tenant (409 on collision).
+personalInfo.emergencyContacts: (OPTIONAL): (User). Array; when sent, exactly one isPrimary=true is re-validated.
+personalInfo.address: (OPTIONAL): (User). Object; current mirrored from permanent when isSameAsPermanent=true.
+employmentDetail: (OPTIONAL): (object). Partial employment-detail; department and jobTitle are NOT required when patching other sub-fields.
+employmentDetail.department: (OPTIONAL): (API call - GET /setting-api/departments -> data[*]._id). Object { _id, departmentId, name }.
+employmentDetail.division: (OPTIONAL): (API call - GET /setting-api/departments?type=DIVISION -> data[*]._id). Object { _id, divisionId, name }.
+employmentDetail.jobTitle: (OPTIONAL): (API call - GET /setting-api/titles -> data[*]._id). Object { _id, name }.
+employmentDetail.jobGrade: (OPTIONAL): (API call - GET /setting-api/grades -> data[*]._id). Object { _id, name }.
+employmentDetail.legalEntity: (OPTIONAL): (API call - GET /workspace-api/campuses?Scope=legal-entities -> data[*]._id). ObjectId.
+employmentDetail.reportingManager: (OPTIONAL): (API call - GET /employees-api/employees/search -> data[*]._id). ObjectId; change/clear fires manager + employee notification mail.
+employmentDetail.campus: (OPTIONAL): (API call - GET /workspace-api/campuses -> data[*]._id). Object { _id, name, building, floor, space }.
+employmentDetail.workMode: (OPTIONAL): (User). String enum. Enum: ON_SITE | REMOTE | HYBRID.
+workSchedule: (OPTIONAL): (API call - GET /setting-api/work-schedules -> data[*]._id). Object.
+timePlan: (OPTIONAL): (API call - GET /time-api/policies?resource=TIME_PLAN -> data[*]._id). ObjectId.
+probation: (OPTIONAL): (User). Object; endDate recomputed server-side.
+tax / compliance / workAuthorization / recruitmentLink / internalEmployee / skillQualification: (OPTIONAL): (User; skills are User input). Same blocks/enums as create.
+governmentIds: (OPTIONAL): (User). Array; idNumber values re-tokenized in the vault (no raw gov-ID persisted).
+visas: (OPTIONAL): (User). Array of visa entries.
+customFields: (OPTIONAL): (User). Object, arbitrary key-value pairs.
+userGroups: (OPTIONAL): (API call - GET /auth-api/User-Groups -> data[*]._id). Array of group-ID strings; synced to auth-service.
+Dependent look-up APIs GET /employees-api/employees/search - id / reportingManager GET /setting-api/departments - department / division GET /setting-api/titles - jobTitle GET /setting-api/grades - jobGrade GET /setting-api/employment-types - employmentBasis GET /setting-api/work-schedules - workSchedule GET /workspace-api/campuses - campus / legalEntity GET /time-api/policies?resource=TIME_PLAN - timePlan GET /auth-api/User-Groups - userGroups
+Parameters
+Cancel
+Reset
+NameDescriptionid *
+string
+(path)
+Employee document ObjectId
+Request body
+application/json
+
+Execute
+Clear
+Responses
+Curl
+
+curl -X 'PATCH' \  'https://api.stg.blazeup.ai/employees-api/employees/6a8c0826aa0c840906ac732a' \  -H 'accept: */*' \  -H 'Authorization: Bearer <TOKEN>' \  -H 'Content-Type: application/json' \  -d '{  "employmentDetail": {    "jobTitle": {      "_id": "6a7ec40808a9504e8d5b978f",      "name": "software engineer 1"    }  }}'
+Request URL
+https://api.stg.blazeup.ai/employees-api/employees/6a8c0826aa0c840906ac732a
+Server response
+CodeDetails200Response body
+
+
+
+
+Employees
+
+POST
+/employees-api/employees
+Create a new employee
+
+
+
+Creates one employee in the current tenant. HR / admin only (authorization-gated). Work email and userId must be unique (409 on collision); the legal entity must belong to this tenant (400 if not); a primary emergency contact must be present. Default/system agents cannot be created here (403). Derives userId from the work-email local part when omitted, computes the probation end date, mirrors the address when flagged same-as, resolves the reporting-manager snapshot, generates employeeId, and tokenizes government-ID numbers in the vault before insert (no raw gov-ID is ever persisted).
+Required body fields
+employmentType: (REQUIRED): (User). String enum. Enum: REGULAR | CONTRACT | INTERN | CONSULTANT.
+employmentBasis: (REQUIRED): (object). Employment-type document reference; send { _id, name }.
+employmentBasis._id: (REQUIRED): (API call - GET /setting-api/employment-types -> data[*]._id). ObjectId format.
+hireDate: (REQUIRED): (User). String, date YYYY-MM-DD.
+personalInfo: (REQUIRED): (object). Personal-info block (see nested required fields below).
+personalInfo.firstName: (REQUIRED): (User). String, given name. Sanitized.
+personalInfo.lastName: (REQUIRED): (User). String, family name. Sanitized.
+personalInfo.dob: (REQUIRED): (User). String, date of birth YYYY-MM-DD.
+personalInfo.gender: (REQUIRED): (User). String enum. Enum: MALE | FEMALE | NON_BINARY | PREFER_NOT_TO_SAY.
+personalInfo.contact: (REQUIRED): (object). Contact block.
+personalInfo.contact.workEmail: (REQUIRED): (User). String, valid email, unique per tenant.
+employmentDetail: (REQUIRED): (object). Employment-detail block (see nested required fields below).
+employmentDetail.department: (REQUIRED): (object). Send { _id, departmentId, name }.
+employmentDetail.department._id: (REQUIRED): (API call - GET /setting-api/departments -> data[*]._id). ObjectId format.
+employmentDetail.department.departmentId: (REQUIRED): (User). String, 12-digit subnet ID encoding the department hierarchy (e.g. 100103000000).
+employmentDetail.jobTitle: (REQUIRED): (object). Send { _id, name }.
+employmentDetail.jobTitle._id: (REQUIRED): (API call - GET /setting-api/titles -> data[*]._id). ObjectId format.
+Optional body fields
+isCompOffEligible: (OPTIONAL): (User). Boolean, comp-off eligibility flag.
+employmentRegion: (OPTIONAL): (User). String enum. Enum: SOUTH_ASIA | SOUTHEAST_ASIA | MIDDLE_EAST | NORTH_AMERICA | EUROPE | OTHER.
+personalInfo.prefix: (OPTIONAL): (User). String enum. Enum: MR | MS | MRS | DR | PROF | OTHER.
+personalInfo.middleName / preferredName / legalFullName: (OPTIONAL): (User). String. Sanitized.
+personalInfo.suffix: (OPTIONAL): (User). String enum. Enum: JR | SR | II | III | IV | ESQ | OTHER.
+personalInfo.maritalStatus: (OPTIONAL): (User). String enum. Enum: SINGLE | MARRIED | DIVORCED | WIDOWED | SEPARATED | PREFER_NOT_TO_SAY.
+personalInfo.bloodType: (OPTIONAL): (User). String enum. Enum: A_POSITIVE | A_NEGATIVE | B_POSITIVE | B_NEGATIVE | AB_POSITIVE | AB_NEGATIVE | O_POSITIVE | O_NEGATIVE | UNKNOWN.
+personalInfo.nationality / medicalNotes / photoUrl: (OPTIONAL): (User). String.
+personalInfo.ethnicity: (OPTIONAL): (User). ObjectId format.
+personalInfo.contact.userId: (OPTIONAL): (User). String; auto-derived from workEmail local part when omitted.
+personalInfo.contact.personalEmail: (OPTIONAL): (User). String, valid email.
+personalInfo.contact.workPhone / personalPhone: (OPTIONAL): (User). Object { countryCode, number }.
+personalInfo.contact.preferredContactMethod: (OPTIONAL): (User). String enum. Enum: WORK_EMAIL | PERSONAL_EMAIL | WORK_PHONE | PERSONAL_PHONE.
+personalInfo.address: (OPTIONAL): (User). Object { isSameAsPermanent, current{...}, permanent{...} }; current is mirrored from permanent when isSameAsPermanent=true.
+personalInfo.emergencyContacts: (OPTIONAL): (User). Array of { name (required), relationship, phone, email, isPrimary }. Exactly one isPrimary=true required.
+personalInfo.dependents: (OPTIONAL): (User). Array of { firstName, relationship, dob, gender, isInsured, coverageStartDate, coverageEndDate }.
+employmentDetail.legalEntity: (OPTIONAL): (API call - GET /workspace-api/campuses?Scope=legal-entities -> data[*]._id). ObjectId; must belong to this tenant.
+employmentDetail.division: (OPTIONAL): (API call - GET /setting-api/departments?type=DIVISION -> data[*]._id). Object { _id, divisionId (12 digits), name }.
+employmentDetail.jobGrade: (OPTIONAL): (API call - GET /setting-api/grades -> data[*]._id). Object { _id, name }.
+employmentDetail.reportingManager: (OPTIONAL): (API call - GET /employees-api/employees/search -> data[*]._id). ObjectId; snapshot resolved server-side.
+employmentDetail.campus: (OPTIONAL): (API call - GET /workspace-api/campuses -> data[*]._id). Object { _id, name, country, building{_id} (GET /campuses/:campusId/buildings), floor{_id} (GET /buildings/:buildingId/floors), space{_id} (GET /campuses/:campusId/spaces) }.
+employmentDetail.workMode: (OPTIONAL): (User). String enum. Enum: ON_SITE | REMOTE | HYBRID.
+employmentDetail.workArrangement: (OPTIONAL): (User). Object { remoteDaysPerWeek (0-7), coreHours, flexStartTime, ... }.
+workSchedule: (OPTIONAL): (API call - GET /setting-api/work-schedules -> data[*]._id). Object { _id, name, scheduleType (FIXED | FLEXI | SHIFT | COMPRESSED), shiftType (DAY | NIGHT | ROTATING | SPLIT), weeklySchedule[], ... }.
+timePlan: (OPTIONAL): (API call - GET /time-api/policies?resource=TIME_PLAN -> data[*]._id). ObjectId.
+probation: (OPTIONAL): (User). Object { isOnProbation, startDate, durationMonths (Min 0), endDate, notes }; endDate recomputed server-side.
+contractDetail / internship / laborContract / employeeAgreement: (OPTIONAL): (User). Lifecycle date blocks; contractTerm enum DEFINITE | INDEFINITE where present.
+tax: (OPTIONAL): (User). Object { taxResidenceCountry (IN | US | VN | MIDDLE_EAST), detail{...} }.
+compliance: (OPTIONAL): (User). Object { gdpr{...}, dataClassification (PUBLIC | INTERNAL | CONFIDENTIAL | RESTRICTED) }.
+workAuthorization: (OPTIONAL): (User). Object { isAuthorizedToWork, authorizationType (CITIZEN | PERMANENT_RESIDENT | WORK_VISA | STUDENT_VISA | WORK_PERMIT | OTHER), visa/permit fields, documents[] }.
+recruitmentLink: (OPTIONAL): (API call - GET /project-api/projects -> data[*]._id for candidate/application refs). Object { candidate, hires[] }.
+internalEmployee: (OPTIONAL): (User). Object { isInternal, agentType (AI_ASSISTANT | SYSTEM_SERVICE | CUSTOM), agentKey, isDefault, description }.
+skillQualification: (OPTIONAL): (User input - no lookup service for skills). Object { skills[] (name required; proficiency BEGINNER | INTERMEDIATE | ADVANCED | EXPERT), certifications[], educations[], workExperience, languages[], linkedinUrl, bio }.
+governmentIds: (OPTIONAL): (User). Array of { idType (PASSPORT | NATIONAL_ID | AADHAAR | PAN | SSN | CCCD | LABOR_CARD | RESIDENT_ID | DRIVER_LICENSE | OTHER), countryCode (ISO 3166-1 alpha-2), idNumber (format-validated per idType; stored tokenized) }.
+visas: (OPTIONAL): (User). Array of { countryCode (ISO alpha-2), visaType, visaNumber, issueDate, expiryDate, entryType (SINGLE_ENTRY | MULTIPLE_ENTRY | OTHER), attachments[] }.
+customFields: (OPTIONAL): (User). Object, arbitrary tenant-defined key-value pairs.
+userGroups: (OPTIONAL): (API call - GET /auth-api/User-Groups -> data[*]._id). Array of group-ID strings; synced to the auth-service User document.
+sendCredentialsEmail: (OPTIONAL): (User). Boolean. Default: false. When true, provisions a login in auth-api and emails a temp password to workEmail.
+Dependent look-up APIs GET /setting-api/employment-types - employmentBasis GET /setting-api/departments - department (add ?type=DIVISION for division) GET /setting-api/titles - jobTitle GET /setting-api/grades - jobGrade GET /setting-api/work-schedules - workSchedule GET /setting-api/locations - location (grouped: GET /setting-api/locations/group-country) GET /workspace-api/campuses - campus (?Scope=legal-entities for legalEntity) GET /time-api/policies?resource=TIME_PLAN - timePlan GET /auth-api/User-Groups - userGroups GET /employees-api/employees/search - reportingManager GET /project-api/projects - recruitmentLink candidate/application
+Parameters
+Cancel
+Reset
+No parameters
+Request body
+application/json
+
+Execute
+Responses
+CodeDescriptionLinks201Employee created successfully
+No links400Validation error
+No links409Work email already in use
+
+
+Employee Profile
+
+PATCH
+/employees-api/employees/{id}/personal-info
+Update personal information section
+
+
+
+Patches the personal-info block (name, contact, demographics). Runs the manager-snapshot cascade and life-event side effects, so it keeps a dedicated route rather than folding into PATCH /sections. All fields are a partial of PersonalInfoDto (any subset). Optional body fields
+prefix: (OPTIONAL): (User). enum EMPLOYEE.PREFIX. Honorific.
+firstName: (OPTIONAL): (User). string. Given name. Sanitized.
+middleName: (OPTIONAL): (User). string. Sanitized.
+lastName: (OPTIONAL): (User). string. Family name. Sanitized.
+suffix: (OPTIONAL): (User). enum EMPLOYEE.SUFFIX.
+preferredName: (OPTIONAL): (User). string. Sanitized.
+legalFullName: (OPTIONAL): (User). string. Sanitized.
+dob: (OPTIONAL): (User). string. Date of birth, YYYY-MM-DD (DATE_REGEX).
+gender: (OPTIONAL): (User). enum EMPLOYEE.GENDER.
+maritalStatus: (OPTIONAL): (User). enum EMPLOYEE.MARITAL_STATUS.
+nationality: (OPTIONAL): (User). string.
+ethnicity: (OPTIONAL): (User). ObjectId (Mongo id) reference.
+bloodType: (OPTIONAL): (User). enum EMPLOYEE.BLOOD_TYPE.
+medicalNotes: (OPTIONAL): (User). string. Sanitized.
+photoUrl: (OPTIONAL): (User). string.
+photoUpdatedAt: (OPTIONAL): (User). string, YYYY-MM-DD.
+contact: (OPTIONAL): (User). object ContactDto. workEmail (email, unique per tenant), userId, personalEmail, workPhone/personalPhone ({ countryCode, number }), preferredContactMethod (enum EMPLOYEE.PREFERRED_CONTACT_METHOD).
+address: (OPTIONAL): (User). object AddressDto. isSameAsPermanent (boolean), current/permanent (AddressDetailDto: line1, line2, area, city, stateProvince, postalCode, country, latitude, longitude, googlePlaceId, formattedAddress).
+emergencyContacts: (OPTIONAL): (User). EmergencyContactDto[]. name (required in item), relationship, phone, email, isPrimary.
+dependents: (OPTIONAL): (User). DependentDto[]. firstName, middleName, lastName, relationship, dob, gender, isInsured, coverageStartDate, coverageEndDate. Dependent look-up APIs GET /employees-api/employees/search - employee refs (e.g. reportingManager) when editing related blocks.
+Parameters
+Try it out
+NameDescriptionid *
+string
+(path)
+Employee ObjectId
+Request body
+application/json
+Example Value
+Schema
+{  "prefix": "MR",  "firstName": "string",  "middleName": "string",  "lastName": "string",  "suffix": "JR",  "preferredName": "string",  "legalFullName": "string",  "dob": "DATE_REGEX",  "gender": "MALE",  "maritalStatus": "SINGLE",  "nationality": "string",  "ethnicity": "string",  "bloodType": "A_POSITIVE",  "medicalNotes": "string",  "photoUrl": "string",  "photoUpdatedAt": "DATE_REGEX",  "contact": {    "workEmail": "string",    "userId": "string",    "personalEmail": "string",    "workPhone": {      "countryCode": "string",      "number": "string"    },    "personalPhone": {      "countryCode": "string",      "number": "string"    },    "preferredContactMethod": "WORK_EMAIL"  },  "address": {    "isSameAsPermanent": true,    "current": {      "line1": "string",      "line2": "string",      "area": "string",      "city": "string",      "stateProvince": "string",      "postalCode": "string",      "country": "string",      "latitude": 0,      "longitude": 0,      "googlePlaceId": "string",      "formattedAddress": "string"    },    "permanent": {      "line1": "string",      "line2": "string",      "area": "string",      "city": "string",      "stateProvince": "string",      "postalCode": "string",      "country": "string",      "latitude": 0,      "longitude": 0,      "googlePlaceId": "string",      "formattedAddress": "string"    }
+  },  "emergencyContacts": [    {      "name": "string",      "relationship": "string",      "phone": {        "countryCode": "string",        "number": "string"      },      "email": "string",      "isPrimary": true    }
+  ],  "dependents": [    {      "registrationCase": "string",      "fullName": "string",      "firstName": "string",      "middleName": "string",      "lastName": "string",      "relationship": "string",      "dob": "DATE_REGEX",      "nationality": "string",      "gender": "MALE",      "nationalId": "string",      "taxCode": "string",      "passport": {        "number": "string",        "issueDate": "DATE_REGEX",        "placeOfIssue": "string"      },      "deductionStartPeriod": "string",      "deductionEndPeriod": "string",      "verified": true,      "isInsured": true,      "coverageStartDate": "DATE_REGEX",      "coverageEndDate": "DATE_REGEX"    }
+  ],  "linkedinId": "string",  "socialProfiles": [    {      "platform": "string",      "url": "string"    }
+  ],  "workplaces": [    {      "_id": "string",      "name": "string"    }
+  ],  "w2ElectronicConsent": true,  "paymentMethodPreference": "direct_deposit",  "terminationDate": "DATE_REGEX",  "ssn": "string"}
+Responses
+CodeDescriptionLinks200Updated personal info
+No links400Validation error
+No links403Not authorized
+No links404Employee not found
+No links
+PATCH
+/employees-api/employees/{id}/photo-url
+Self-service or HR: update employee profile photo
+
+
+
+PATCH
+/employees-api/employees/{id}/sections
+Patch an employee section (scope-driven)
+
+
+
+PATCH
+/employees-api/employees/{id}/signature
+Update employee signature
+
+
+
+GET
+/employees-api/employees/{id}/collections
+Read an employee sub-collection (scope-driven)
+
+
+
+PATCH
+/employees-api/employees/{id}/collections
+Mutate an employee sub-collection (scope-driven)
+
+
+
+GET
+/employees-api/employees/{id}/benefits
+List benefits applicable to this employee
+
+
+
+Computed from the per-tenant BenefitDefinition catalog matched by country and grade. Read-only - explicit per-employee enrollment ships in the dedicated Benefits microservice. No request body or query params; the employee :id path param identifies the record. Dependent look-up APIs None.
+Parameters
+Try it out
+NameDescriptionid *
+string
+(path)
+Employee ObjectId
+Responses
+CodeDescriptionLinks200Applicable benefits list
+No links404Employee not found
+No links
+GET
+/employees-api/employees/{id}/covered-individuals
+Covered Individuals report (insurance addition/deletion)
+
+
+
+The employee (self) plus their dependents with insurance-coverage status and dates - a flat list for CSV export and insurer add/delete submissions. Per dependent: isInsured, coverageStartDate (addition), coverageEndDate (deletion). Read-only; no request body or query params. Dependent look-up APIs None.
+Parameters
+Try it out
+NameDescriptionid *
+string
+(path)
+Employee ObjectId
+Responses
+
+tasks :
+
+task
+
+GET
+/project-api/task/export
+Export Tasks as CSV
+
+
+
+GET
+/project-api/task
+Get Tasks
+
+
+
+Get Tasks Retrieves a paginated list of tasks with optional filters. Supports grouping results by various fields and scope-based filtering.
+For Getting Tasks:
+Use GET /task
+Optional query fields
+Scope: (OPTIONAL): (User). string, Query scope. Enum: PROJECT | EMPLOYEE. Omit or PROJECT (default) lists tasks across the supplied projectIds; EMPLOYEE returns "My Tasks" — tasks assigned to the logged-in user (checks both assignee and assignees), with projectIds acting as an optional secondary filter.
+projectIds: (CONDITIONAL): (API call - GET /project-api/projects → data[ * ]._id). array, Array of project IDs to filter (required when Scope=PROJECT; optional when Scope=EMPLOYEE)
+taskIds: (OPTIONAL): (User). array, Filter by specific task MongoDB IDs
+taskNumbers: (OPTIONAL): (User). array, Filter by human-readable task numbers (e.g., TASK-1)
+excludeTaskId: (OPTIONAL): (User). string, Exclude a specific task from results
+parentTaskId: (OPTIONAL): (User). string, Filter subtasks by parent task
+search: (OPTIONAL): (User). string, Free text search for tasks by title
+assignees: (OPTIONAL): (API call - GET /api/employees/search → data[ * ]._id). array, Filter by assignee employee IDs
+statuses: (OPTIONAL): (API call - GET /project-api/project-settings?type=STATUS → data[ * ]._id). array, Filter by status IDs
+priorities: (OPTIONAL): (API call - GET /project-api/project-settings?type=PRIORITY → data[ * ]._id). array, Filter by priority IDs
+labels: (OPTIONAL): (API call - GET /project-api/project-settings?type=LABEL → data[ * ]._id). array, Filter by label IDs
+milestoneId: (OPTIONAL): (User). string, Filter by milestone ObjectId
+watchers: (OPTIONAL): (API call - GET /api/employees/search → data[ * ]._id). array, Filter by watcher employee IDs
+taskGroupId: (OPTIONAL): (User). string, Filter by task group / sprint ID
+fromStartDate: (OPTIONAL): (User). string, Filter tasks starting on or after this date (ISO 8601)
+toStartDate: (OPTIONAL): (User). string, Filter tasks starting on or before this date (ISO 8601)
+fromDueDate: (OPTIONAL): (User). string, Filter tasks due on or after this date (ISO 8601)
+toDueDate: (OPTIONAL): (User). string, Filter tasks due on or before this date (ISO 8601)
+fromEstimatedEffort: (OPTIONAL): (User). number, Filter tasks with estimated effort >= this value
+toEstimatedEffort: (OPTIONAL): (User). number, Filter tasks with estimated effort <= this value
+type: (OPTIONAL): (User). string, Filter by task category. Enum: Task | Sub Task
+groupBy: (OPTIONAL): (User). string, Group results by field. Enum: status | type | taskType | assignee | project
+responseFields: (OPTIONAL): (User). array, Fields to include in response. Enum: _id | id | project | customer | type | taskType | title | description | documents | priority | status | sla | estimatedEffort | actualEffort | timeLogged | startDate | endDate | dueDate | completedDate | author | lastUpdatedBy | assignee | assignees | watchers | comment | subtask | linkedTask | ccList | labels | mileStones | milestone | taskGroupId | parentTask | ancestors | depth | childCount | customFields | createdAt | updatedAt
+Response Structure
+{
+  "message": "Fetched tasks successfully",
+  "data": [...],
+  "total": 100,
+  "groups": { ... }
+}
+The groups field is only included when groupBy is specified.
+Dependent look-up APIs
+GET /api/employees/search - supplies employee _id values for assignees and watchers filters.
+GET /project-api/project-settings - supplies priority, status, and label _id values.
+GET /project-api/projects - supplies project _id values.
+Parameters
+Try it out
+NameDescriptionflat
+boolean
+(query)
+Return a FLAT list instead of a Task -> Child -> Sub tree. By default a returned child is folded into the parent it belongs to subTasks[], which makes data.length smaller than the total counted before nesting - so a page of 20 can render as 16 rows. Set this when the client renders one row per task (an "all tasks" table) and needs data.length === min(limit, total) for its pager. EMPLOYEE scope is always flat and ignores this flag.
+--
+true
+false
+includeStatusCounts
+boolean
+(query)
+Also return statusCounts: how many tasks sit in each status across the WHOLE filtered set, not just the returned page. data is capped at 200 rows, so a client that tallies statuses from the page describes only that page while total describes everything - which is why the project overview donut read 2075 in the middle and 200 across its segments. Counted from the same match as total, so the two can never disagree. Costs one extra grouping query, so it is opt-in.
+--
+true
+false
+search
+string
+(query)
+Search term to filter tasks by title or ID
+projectIds
+array[string]
+(query)
+Comma-separated project IDs to fetch tasks from. Accepts both MongoDB ObjectIds (e.g., 507f1f77bcf86cd799439011) and project.id values (e.g., PROJ-2026-001). Required when Scope=PROJECT (default); optional when Scope=EMPLOYEE.
+type
+array[string]
+(query)
+Filter tasks by category / hierarchy level. Accepts a comma-separated list of "Task", "Child Task" and "Sub Task".
+taskType
+array[string]
+(query)
+Filter tasks by task type (Story, Feature, Bug, Enhancement, Epic)
+fromStartDate
+string
+(query)
+Filter tasks from this start date (YYYY-MM-DD format)
+toStartDate
+string
+(query)
+Filter tasks until this start date (YYYY-MM-DD format)
+fromDueDate
+string
+(query)
+Filter tasks from this due date (YYYY-MM-DD format)
+toDueDate
+string
+(query)
+Filter tasks until this due date (YYYY-MM-DD format)
+fromSla
+number
+(query)
+Filter by minimum estimated effort in hours
+toSla
+number
+(query)
+Filter by maximum estimated effort in hours
+statuses
+array[string]
+(query)
+Array of status IDs to filter tasks (comma-separated string will be split into array)
+priorities
+array[string]
+(query)
+Array of priority IDs to filter tasks (comma-separated string will be split into array)
+priority
+array[string]
+(query)
+Alias for priorities — single-or-comma-separated priority IDs. Merged with priorities server-side.
+labels
+array[string]
+(query)
+Array of label IDs to filter tasks (comma-separated)
+assignees
+array[string]
+(query)
+Array of assignee IDs to filter tasks
+mileStones
+array[string]
+(query)
+Array of milestone names to filter tasks
+fromCreatedDate
+string
+(query)
+Filter tasks created from this date (YYYY-MM-DD format)
+toCreatedDate
+string
+(query)
+Filter tasks created until this date (YYYY-MM-DD format)
+fromEndDate
+string
+(query)
+Filter tasks completed from this date (YYYY-MM-DD format)
+toEndDate
+string
+(query)
+Filter tasks completed until this date (YYYY-MM-DD format)
+fromCompletedDate
+string
+(query)
+Filter tasks completed from this date (YYYY-MM-DD format)
+toCompletedDate
+string
+(query)
+Filter tasks completed until this date (YYYY-MM-DD format)
+author
+array[string]
+(query)
+Array of author IDs to filter tasks
+groupBy
+string
+(query)
+B12: group list results by an indexed field: status | type | taskType | assignee | project | priority | milestone (uses status.name, assignee._id, project._id, priority.name, mileStones._id internally)
+Available values : status, type, taskType, assignee, project, priority, milestone
+--
+status
+type
+taskType
+assignee
+project
+priority
+milestone
+taskIds
+array[string]
+(query)
+Array of task IDs (MongoDB ObjectIds) to filter tasks by
+taskNumbers
+array[string]
+(query)
+Array of human-readable task numbers to filter tasks (e.g., TASK-1, TASK-2)
+excludeTaskId
+string
+(query)
+Task ID to exclude from results (for cross-project task selection)
+parentTaskId
+string
+(query)
+Parent task id(s) whose children to return. Accepts ONE id or a comma-separated list (parentTaskId=a,b,c) so a whole level of the task tree can be fetched in a single request instead of one call per parent. A single id behaves exactly as before.
+maxDepth
+number
+(query)
+Deepest hierarchy level to return (0 main, 1 child, 2 sub)
+milestoneId
+string
+(query)
+Filter tasks by milestone ObjectId
+watchers
+array[string]
+(query)
+Filter tasks watched by these employee IDs
+taskGroupId
+string
+(query)
+Filter by task group / sprint section ID
+fromEstimatedEffort
+number
+(query)
+Filter tasks with estimatedEffort >= this value (hours)
+toEstimatedEffort
+number
+(query)
+Filter tasks with estimatedEffort <= this value (hours)
+responseFields
+array[string]
+(query)
+Fields to include in response. If not specified, all fields will be returned.
+
+
+
+
+
+
+
+Scope
+string
+(query)
+PROJECT (default): list tasks across the provided projectIds. EMPLOYEE: list tasks assigned to the logged-in user. PERSONAL: list personal tasks (no project) created by the logged-in user.
+Available values : PROJECT, EMPLOYEE, PERSONAL
+--
+PROJECT
+EMPLOYEE
+PERSONAL
+skip *
+string
+(query)
+page *
+string
+(query)
+Responses
+CodeDescriptionLinks200No links
+POST
+/project-api/task
+Create Task
+
+
+
+Create Task Creates a new task or subtask with automatic ID generation and customer ID population from the associated project.
+For Creating a Task:
+Use POST /task
+Task ID is generated automatically, and the customer ID is automatically populated from the associated project.
+Required body fields
+project: (REQUIRED): (User). Types.ObjectId, Project ID (MongoDB ObjectId) where task will be created
+title: (REQUIRED): (User). string, Task title (1–500 characters)
+type: (REQUIRED): (User). string, Task category — the task's LEVEL in the hierarchy (NOT task type). Enum: Task | Child Task | Sub Task. See "Task hierarchy" below for which parent each level requires. Do NOT confuse with taskType below — type is the category and is required; taskType is an optional classification.
+priority: (REQUIRED): (API call - GET /project-api/project-settings?type=PRIORITY → data[ * ]._id). Types.ObjectId, Priority level ID
+status: (REQUIRED): (API call - GET /project-api/project-settings?type=STATUS → data[ * ]._id). Types.ObjectId, Current status ID
+Optional body fields
+description: (OPTIONAL): (User). object, Task description with optional linked attachmentsmessage: (OPTIONAL): string, The description text
+linkedAttachment: (OPTIONAL): string[], Array of attachment IDs
+taskType: (OPTIONAL): (User). string, Task type classification (distinct from the required type category). Enum: Story | Feature | Bug | Enhancement | Epic. Omit when unsure — do not block the request on this field.
+customer: (OPTIONAL): (User). Types.ObjectId, Customer ID (auto-populated from project if omitted)
+documents: (OPTIONAL): (User). Types.ObjectId[], Array of document attachment IDs
+sla: (OPTIONAL): (User). number, Service Level Agreement time in hours (min: 0)
+estimatedEffort: (OPTIONAL): (User). number, Estimated effort in hours (min: 0)
+actualEffort: (OPTIONAL): (User). number, Actual effort spent in hours
+startDate: (OPTIONAL): Date, Task start date
+dueDate: (OPTIONAL): Date, Task due date
+endDate: (OPTIONAL): Date, Task completion date
+completedDate: (OPTIONAL): Date, Task completed date
+assignee: (OPTIONAL): (API call - GET /api/employees/search → data[ * ]._id). Types.ObjectId, Primary employee ID assigned to the task
+assignees: (OPTIONAL): (API call - GET /api/employees/search → data[ * ]._id). Types.ObjectId[], Additional assignee employee IDs (multi-assignee support)
+watchers: (OPTIONAL): (API call - GET /api/employees/search → data[ * ]._id). Types.ObjectId[], Watcher employee IDs — notified on all task changes
+ccList: (OPTIONAL): (API call - GET /api/employees/search → data[ * ]._id). Types.ObjectId[], CC list employee IDs (max 50, unique)
+labels: (OPTIONAL): (API call - GET /project-api/project-settings?type=LABEL → data[ * ]._id). Types.ObjectId[], Array of label IDs (max 50, unique)
+mileStones: (OPTIONAL): (User). string[], Array of milestone names (max 20, unique)
+milestone: (OPTIONAL): (User). Types.ObjectId, Milestone ObjectId this task belongs to
+taskGroupId: (OPTIONAL): (User). Types.ObjectId, Task group / sprint section ID
+task: (OPTIONAL): (User). Types.ObjectId, Parent task ID. REQUIRED when type is "Child Task" or "Sub Task"; ignored for top-level "Task". Stored as parentTask in the database.
+parentTask: (OPTIONAL): (User). Types.ObjectId, Alias for "task" field
+parentTaskKey: (OPTIONAL): (User). string, Parent task human key (e.g. "AMAZ-3"). Preferred when you only have the key shown in the UI and not the Mongo ObjectId — server resolves it to parentTask._id. Only used if task and parentTask are both absent.
+Task hierarchy
+Tasks form THREE levels, chosen with type and linked with task / parentTask:
+typeLevelParent requiredCan containTaskTop level (main task)No — omit task/parentTaskChild Tasks and Sub TasksChild TaskSecond levelYes — a TaskSub TasksSub TaskThird level (leaf)Yes — a Task or a Child TaskNothing
+Notes:
+The level is stored, not inferred from depth. Creating a Child Task means sending type: "Child Task" — a Sub Task parented to a Task is NOT the same record as a Child Task.
+Reads nest the tree into childTasks[] and subTasks[]: a Task carries both, a Child Task carries only subTasks[], a Sub Task carries neither.
+Assignee cannot be set directly on a Child Task or Sub Task — it is inherited from the parent and cascades down.
+Personal tasks (isPersonal: true) are flat: only type: "Task" is meaningful.
+Dependent look-up APIs
+GET /api/employees/search - supplies employee _id values for assignee, assignees, watchers, and ccList fields.
+GET /project-api/project-settings?type=PRIORITY - supplies priority _id values.
+GET /project-api/project-settings?type=STATUS - supplies status _id values.
+GET /project-api/project-settings?type=LABEL - supplies label _id values.
+Sample payload
+{
+  "project": "507f1f77bcf86cd799439011",
+  "title": "Implement user authentication",
+  "type": "Task",
+  "taskType": "Feature",
+  "priority": "507f1f77bcf86cd799439012",
+  "status": "507f1f77bcf86cd799439013",
+  "description": {
+    "message": "Implement JWT-based authentication system",
+    "linkedAttachment": []
+  },
+  "assignee": "507f191e810c19729de860ea",
+  "assignees": ["507f191e810c19729de860eb"],
+  "watchers": ["507f191e810c19729de860ec"],
+  "startDate": "2025-01-01",
+  "dueDate": "2025-01-15",
+  "sla": 8,
+  "estimatedEffort": 16,
+  "labels": ["507f1f77bcf86cd799439014"],
+  "milestone": "507f1f77bcf86cd799439020",
+  "taskGroupId": "507f1f77bcf86cd799439021"
+}
+Parameters
+Cancel
+Reset
+No parameters
+Request body
+application/json
+
+Execute
+Responses
+CodeDescriptionLinks201No links
+POST
+/project-api/task/{id}/summarize
+AI-summarize a task's activity log (activity + comments)
+
+
+
+Proxies to Blazey Agent (/internal/project/summarize-project, TASK_ACTIVITY_LOG). Merges the task's audit-trail rows (real field changes) and its comments into one entries[] list.
+Parameters
+Cancel
+NameDescriptionid *
+string
+(path)
+Task id
+Execute
+Responses
+CodeDescriptionLinks200No links
+DELETE
+/project-api/task/multiple
+Bulk delete tasks
+
+
+
+PATCH
+/project-api/task/multiple
+Bulk Update Tasks
+
+
+
+Bulk Update Tasks Updates one or more tasks in a single request. Supports regular field updates and scope-based comment operations.
+For Updating Tasks:
+Use PATCH /task/multiple?ids=id1,id2,...
+Required query fields
+ids: (REQUIRED): (User). array, Comma-separated array of task IDs to update (MongoDB ObjectIds)
+Optional query fields
+Scope: (OPTIONAL): (User). string, Operation scope for comment management. Enum: add-comment | update-comment | delete-comment. Omit for regular bulk update.
+Optional body fields (regular update — no Scope)
+title: (OPTIONAL): (User). string, Updated task title
+type: (OPTIONAL): (User). string, Updated task category. Enum: Task | Sub Task
+taskType: (OPTIONAL): (User). string, Updated task type. Enum: Story | Feature | Bug | Enhancement | Epic
+project: (OPTIONAL): (User). Types.ObjectId, Updated project ID
+description: (OPTIONAL): (User). object, Updated description (message + linkedAttachment)
+priority: (OPTIONAL): Types.ObjectId, Updated priority ID
+status: (OPTIONAL): Types.ObjectId, Updated status ID
+assignee: (OPTIONAL): string, Updated assignee (employee email or ID)
+assignees: (OPTIONAL): Types.ObjectId[], Updated additional assignees
+watchers: (OPTIONAL): Types.ObjectId[], Updated watchers
+ccList: (OPTIONAL): Types.ObjectId[], Updated CC list
+labels: (OPTIONAL): Types.ObjectId[], Updated label IDs
+mileStones: (OPTIONAL): string[], Updated milestone names
+milestone: (OPTIONAL): Types.ObjectId, Updated milestone ObjectId
+taskGroupId: (OPTIONAL): Types.ObjectId, Updated task group / sprint ID
+linkedTask: (OPTIONAL): Types.ObjectId[], Updated linked task IDs
+sla: (OPTIONAL): number, Updated SLA in hours
+estimatedEffort: (OPTIONAL): number, Updated estimated effort in hours
+startDate: (OPTIONAL): Date, Updated start date
+dueDate: (OPTIONAL): Date, Updated due date
+endDate: (OPTIONAL): Date, Updated end date
+completedDate: (OPTIONAL): Date, Updated completed date
+documents: (OPTIONAL): Types.ObjectId[], Updated document IDs
+Scope-based comment operations
+When Scope is provided, the body should include a comment array:
+comment: (REQUIRED): array, Array of comment objectsScope: add-comment
+{
+  "comment": [
+    {
+      "description": "New comment text",
+      "documents": ["507f1f77bcf86cd799439012"]
+    }
+  ]
+}
+Scope: update-comment
+{
+  "comment": [
+    {
+      "_id": "507f1f77bcf86cd799439016",
+      "description": "Updated comment text"
+    }
+  ]
+}
+Scope: delete-comment
+{
+  "comment": [
+    {
+      "_id": "507f1f77bcf86cd799439016"
+    }
+  ]
+}
+Response Structure
+{
+  "message": "Your changes to the tasks have been saved!",
+  "data": { ... }
+}
+Parameters
+Cancel
+Reset
+NameDescriptionScope
+string
+(query)
+Operation scope: add-comment, update-comment, delete-comment. Omit for regular bulk update.
+ids *
+array[string]
+(query)
+Comma-separated array of task IDs to update (MongoDB ObjectIds)
+-
+-
+Add string item
+Request body
+application/json
+
+Execute
+Responses
+CodeDescriptionLinks200

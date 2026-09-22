@@ -1,4 +1,3 @@
-import json as json_lib
 import json
 from typing import Any
 import httpx
@@ -87,7 +86,8 @@ class BaseAPIClient:
         headers: dict[str, str] | None = None,
         **kwargs,
     ) -> httpx.Response:
-        logger.info(f"ACTUAL API CALL DISPATCHED | Method: {method} | URL: {url} | Payload: {json_data}")
+        payload_str = json.dumps(json_data, indent=2) if isinstance(json_data, (dict, list)) else str(json_data)
+        logger.info(f"\n" + "-"*50 + f"\nHTTP REQUEST DISPATCHED\nMethod: {method}\nURL: {url}\nParams: {params}\nPayload:\n{payload_str}\n" + "-"*50 + "\n")
         response = await self.client.request(
             method=method,
             url=url,
@@ -96,7 +96,8 @@ class BaseAPIClient:
             headers=headers,
             **kwargs,
         )
-        logger.info(f"API RESPONSE RECEIVED | Status: {response.status_code} | URL: {url}")
+        body_snippet = response.text[:1000] if response.text else ""
+        logger.info(f"\n" + "-"*50 + f"\nHTTP RESPONSE RECEIVED\nStatus: {response.status_code}\nURL: {url}\nBody:\n{body_snippet}\n" + "-"*50 + "\n")
         if response.status_code == 503:
             raise httpx.HTTPStatusError("503 Service Unavailable", request=response.request, response=response)
         return response
@@ -107,13 +108,13 @@ class BaseAPIClient:
         path: str,
         *,
         params: dict | None = None,
-        json: Any = None,
+        json_data: Any = None,
         headers: dict | None = None,
         **kwargs,
     ) -> Any:
         url = self._build_url(path)
         request_headers = self._get_headers(headers)
-        fallback_json = json_lib.dumps(
+        fallback_json = json.dumps(
             {"status": "error", "code": 503, "message": "Upstream service disconnected."},
             separators=(",", ":"),
         )
@@ -122,12 +123,12 @@ class BaseAPIClient:
                 method=method,
                 url=url,
                 params=params,
-                json_data=json,
+                json_data=json_data,
                 headers=request_headers,
                 **kwargs,
             )
         except (httpx.ReadError, httpx.ConnectError, httpx.RequestError, httpx.HTTPStatusError) as exc:
-            logger.error(f"HTTP Error during API call to {url}: {exc}")
+            logger.error(f"\n" + "!"*50 + f"\nHTTP Error during API call to {url}: {exc}\n" + "!"*50 + "\n")
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code != 503:
                 try:
                     self._handle_error_response(exc.response)
@@ -142,7 +143,7 @@ class BaseAPIClient:
                         for k, v in api_exc.response_body.items():
                             if k not in err_dict and v is not None:
                                 err_dict[k] = v
-                    return json_lib.dumps(err_dict, separators=(",", ":"))
+                    return json.dumps(err_dict, separators=(",", ":"))
             return fallback_json
         except APIException as exc:
             logger.error(f"API Exception for {url}: {exc}")
@@ -157,7 +158,7 @@ class BaseAPIClient:
                 for k, v in exc.response_body.items():
                     if k not in err_dict and v is not None:
                         err_dict[k] = v
-            return json_lib.dumps(err_dict, separators=(",", ":"))
+            return json.dumps(err_dict, separators=(",", ":"))
 
         if response.status_code == 503:
             return fallback_json
@@ -166,7 +167,7 @@ class BaseAPIClient:
             try:
                 self._handle_error_response(response)
             except APIException as exc:
-                logger.error(f"API Error Response from {url} [Status {response.status_code}]: {exc}")
+                logger.error(f"\n" + "!"*50 + f"\nAPI Error Response from {url} [Status {response.status_code}]: {exc}\n" + "!"*50 + "\n")
                 if exc.status_code == 503:
                     return fallback_json
                 err_dict = {
@@ -178,7 +179,7 @@ class BaseAPIClient:
                     for k, v in exc.response_body.items():
                         if k not in err_dict and v is not None:
                             err_dict[k] = v
-                return json_lib.dumps(err_dict, separators=(",", ":"))
+                return json.dumps(err_dict, separators=(",", ":"))
 
         if response.status_code == 204 or not response.content:
             return {}
@@ -191,14 +192,17 @@ class BaseAPIClient:
     async def get(self, path: str, *, params: dict | None = None, headers: dict | None = None, **kwargs) -> Any:
         return await self.request("GET", path, params=params, headers=headers, **kwargs)
 
-    async def post(self, path: str, *, json: Any = None, params: dict | None = None, headers: dict | None = None, **kwargs) -> Any:
-        return await self.request("POST", path, json=json, params=params, headers=headers, **kwargs)
+    async def post(self, path: str, *, json_data: Any = None, json: Any = None, params: dict | None = None, headers: dict | None = None, **kwargs) -> Any:
+        payload = json_data if json_data is not None else json
+        return await self.request("POST", path, json_data=payload, params=params, headers=headers, **kwargs)
 
-    async def patch(self, path: str, *, json: Any = None, params: dict | None = None, headers: dict | None = None, **kwargs) -> Any:
-        return await self.request("PATCH", path, json=json, params=params, headers=headers, **kwargs)
+    async def patch(self, path: str, *, json_data: Any = None, json: Any = None, params: dict | None = None, headers: dict | None = None, **kwargs) -> Any:
+        payload = json_data if json_data is not None else json
+        return await self.request("PATCH", path, json_data=payload, params=params, headers=headers, **kwargs)
 
-    async def put(self, path: str, *, json: Any = None, params: dict | None = None, headers: dict | None = None, **kwargs) -> Any:
-        return await self.request("PUT", path, json=json, params=params, headers=headers, **kwargs)
+    async def put(self, path: str, *, json_data: Any = None, json: Any = None, params: dict | None = None, headers: dict | None = None, **kwargs) -> Any:
+        payload = json_data if json_data is not None else json
+        return await self.request("PUT", path, json_data=payload, params=params, headers=headers, **kwargs)
 
     async def delete(self, path: str, *, params: dict | None = None, headers: dict | None = None, **kwargs) -> Any:
         return await self.request("DELETE", path, params=params, headers=headers, **kwargs)

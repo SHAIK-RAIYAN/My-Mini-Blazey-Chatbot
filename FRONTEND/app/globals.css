@@ -121,6 +121,10 @@
   * {
     @apply border-border outline-ring/50;
   }
+  ::selection {
+    background-color: #2563eb;
+    color: #ffffff;
+  }
   body {
     @apply bg-background text-foreground;
   }

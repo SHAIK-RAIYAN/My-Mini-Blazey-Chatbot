@@ -14,7 +14,7 @@ class TaskClient(BaseAPIClient):
             val = task_data["assignee"]
             if val:
                 task_data["assignees"] = [val] if not isinstance(val, list) else val
-        return await self.post("/task", json=task_data)
+        return await self.post("/task", json_data=task_data)
 
     async def list_tasks(self, params: dict | None = None) -> dict:
         query_params = dict(params or {})
@@ -55,7 +55,7 @@ class TaskClient(BaseAPIClient):
                 clean_payload["assignees"] = [val] if not isinstance(val, list) else val
             else:
                 clean_payload["assignees"] = []
-        return await self.patch("/task/multiple", json=clean_payload)
+        return await self.patch("/task/multiple", json_data=clean_payload)
 
     async def update_task_by_id(self, task_id: str, payload: dict) -> dict:
         return await self.update_single_task(task_id, payload)
@@ -68,4 +68,4 @@ class TaskClient(BaseAPIClient):
                 clean_payload["assignees"] = [val] if not isinstance(val, list) else val
             else:
                 clean_payload["assignees"] = []
-        return await self.patch("/task/multiple", json=clean_payload)
+        return await self.patch("/task/multiple", json_data=clean_payload)
