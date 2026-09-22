@@ -10,7 +10,7 @@ from langgraph.checkpoint.base import (
 from langchain_core.runnables import RunnableConfig
 from app.config import Settings, settings
 
-client: AsyncIOMotorClient = AsyncIOMotorClient(settings.MONGODB_URI, serverSelectionTimeoutMS=500)
+client: AsyncIOMotorClient = AsyncIOMotorClient(settings.MONGODB_URI, serverSelectionTimeoutMS=3000)
 _mongo_available: bool | None = None
 
 async def _check_mongo_connection() -> bool:

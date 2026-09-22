@@ -3,8 +3,6 @@ from app.agent.prompts import SYSTEM_PROMPT
 from app.agent.nodes import (
     call_model,
     should_continue,
-    check_hitl,
-    route_hitl,
     execute_tools,
 )
 from app.agent.graph import app_graph, graph
@@ -14,8 +12,6 @@ __all__ = [
     "SYSTEM_PROMPT",
     "call_model",
     "should_continue",
-    "check_hitl",
-    "route_hitl",
     "execute_tools",
     "app_graph",
     "graph",

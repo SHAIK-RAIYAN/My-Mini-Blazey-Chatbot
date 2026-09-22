@@ -4,6 +4,9 @@ from typing import Any
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app.config import settings, Settings
+from app.core.logger import get_logger
+
+logger = get_logger()
 
 class APIException(Exception):
     def __init__(
@@ -84,6 +87,7 @@ class BaseAPIClient:
         headers: dict[str, str] | None = None,
         **kwargs,
     ) -> httpx.Response:
+        logger.info(f"ACTUAL API CALL DISPATCHED | Method: {method} | URL: {url} | Payload: {json_data}")
         response = await self.client.request(
             method=method,
             url=url,
@@ -92,6 +96,7 @@ class BaseAPIClient:
             headers=headers,
             **kwargs,
         )
+        logger.info(f"API RESPONSE RECEIVED | Status: {response.status_code} | URL: {url}")
         if response.status_code == 503:
             raise httpx.HTTPStatusError("503 Service Unavailable", request=response.request, response=response)
         return response
@@ -122,10 +127,12 @@ class BaseAPIClient:
                 **kwargs,
             )
         except (httpx.ReadError, httpx.ConnectError, httpx.RequestError, httpx.HTTPStatusError) as exc:
+            logger.error(f"HTTP Error during API call to {url}: {exc}")
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code != 503:
                 try:
                     self._handle_error_response(exc.response)
                 except APIException as api_exc:
+                    logger.error(f"API Exception for {url}: {api_exc}")
                     err_dict = {
                         "statusCode": api_exc.status_code,
                         "error": api_exc.error,
@@ -138,6 +145,7 @@ class BaseAPIClient:
                     return json_lib.dumps(err_dict, separators=(",", ":"))
             return fallback_json
         except APIException as exc:
+            logger.error(f"API Exception for {url}: {exc}")
             if exc.status_code == 503:
                 return fallback_json
             err_dict = {
@@ -158,6 +166,7 @@ class BaseAPIClient:
             try:
                 self._handle_error_response(response)
             except APIException as exc:
+                logger.error(f"API Error Response from {url} [Status {response.status_code}]: {exc}")
                 if exc.status_code == 503:
                     return fallback_json
                 err_dict = {

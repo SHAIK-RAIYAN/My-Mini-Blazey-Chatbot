@@ -9,10 +9,10 @@ from app.models.employee_models import (
     SearchEmployeesArgs,
     GetEmployeeArgs,
     UpdateEmployeeArgs,
+    UpdatePersonalInfoArgs,
 )
 from app.models.api_models import (
     ChatRequest,
-    ApprovalRequest,
 )
 
 __all__ = [
@@ -24,6 +24,6 @@ __all__ = [
     "SearchEmployeesArgs",
     "GetEmployeeArgs",
     "UpdateEmployeeArgs",
+    "UpdatePersonalInfoArgs",
     "ChatRequest",
-    "ApprovalRequest",
 ]

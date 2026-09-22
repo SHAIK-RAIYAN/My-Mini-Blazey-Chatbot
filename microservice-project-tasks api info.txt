@@ -1,0 +1,779 @@
+
+Here is the comprehensive API documentation for Task operations in the **Project Microservice** (`blazeup-microservice-project`), directly inspected and verified from the source codebase.
+
+---
+
+### Global Base Configuration & Authentication
+
+* **Base URL**: `http://api.stg.blazeup.ai/project-api` (Configured via `APP_CONTEXT=project-api` in [src/main.ts](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/main.ts#L22) and `.env.example`).
+* **Authentication**: Bearer JWT token required in the request header for all routes:
+  ```http
+  Authorization: Bearer <your_jwt_token>
+  Content-Type: application/json
+  ```
+* **Authorization / RBAC**: All task endpoints are protected with `@AuthMethod(IS_AUTHORIZATION_KEY)`. The caller's role must have the corresponding task endpoint permissions registered in the RBAC control plane.
+* **Global Validation**: Handled by NestJS `ValidationPipe({ transform: true, whitelist: true })`. Any undeclared request body or query fields are automatically stripped.
+
+---
+
+### 1. Single Task Operations
+
+---
+
+#### 1.1 Create Task
+
+Creates a new task, child task, or subtask. Task human-readable IDs (e.g. `PROJ-1`) are generated atomically upon saving.
+
+* **HTTP Method**: `POST`
+* **Endpoint URL**: `http://api.stg.blazeup.ai/project-api/task`
+* **Controller**: [TaskController.create](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/task.controller.ts#L154)
+* **DTO**: [CreateTaskDto](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/dto/create-task.dto.ts#L12)
+
+##### Request Headers
+```http
+POST /project-api/task HTTP/1.1
+Host: api.stg.blazeup.ai
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+##### Request Payload (Body)
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | **Yes** | Task title (1–500 characters). |
+| `project` | `string` (ObjectId) | **Conditional** | Project ID. Required unless `isPersonal: true`. |
+| `priority` | `string` (ObjectId) | **Conditional** | Priority ID from `GET /project-api/project-settings?type=PRIORITY`. Required unless `isPersonal: true`. |
+| `status` | `string` (ObjectId) | **Conditional** | Status ID from `GET /project-api/project-settings?type=STATUS`. Required unless `isPersonal: true`. |
+| `type` | `string` | No | Task hierarchy level: `"Task"` (top-level, default), `"Child Task"`, or `"Sub Task"`. |
+| `taskType` | `string` | No | Classification string (`"Story"`, `"Feature"`, `"Bug"`, `"Enhancement"`, `"Epic"`). |
+| `isPersonal` | `boolean` | No | If `true`, creates a personal task without requiring a project, priority, or status. |
+| `description` | `object` | No | Task description object: `{ "message": string, "linkedAttachment": string[] }`. |
+| `assignee` | `string` (ObjectId) | No | Primary assignee employee ID (`GET /api/employees/search`). |
+| `assignees` | `string[]` (ObjectIds) | No | Additional assignee employee IDs (multi-assignee). |
+| `watchers` | `string[]` (ObjectIds) | No | Watcher employee IDs notified on task changes. |
+| `ccList` | `string[]` (ObjectIds) | No | CC list employee IDs (max 50). |
+| `labels` | `string[]` (ObjectIds) | No | Label IDs from `GET /project-api/project-settings?type=LABEL` (max 50). |
+| `mileStones` | `string[]` | No | Milestone names (max 20). |
+| `milestone` | `string` (ObjectId) | No | Milestone MongoDB ObjectId. |
+| `taskGroupId` | `string` (ObjectId) | No | Task group / sprint section ID. |
+| `sla` | `number` | No | Service Level Agreement in hours (min: 0). |
+| `estimatedEffort` | `number` | No | Estimated effort in hours (min: 0). |
+| `startDate` | `string` (ISO 8601) | No | Start date (e.g. `"2026-09-25T00:00:00.000Z"` or `"2026-09-25"`). |
+| `dueDate` | `string` (ISO 8601) | No | Due date. |
+| `parentTask` / `task` | `string` (ObjectId) | **Conditional** | Parent task ID. **Required** when `type` is `"Child Task"` or `"Sub Task"`. |
+| `parentTaskKey` | `string` | No | Human-readable parent key (e.g. `"PROJ-1"`). Alternative to `parentTask`. |
+| `documents` | `Array<string \| object>` | No | Attachment IDs or Doc Central refs (`{ provider, key, filename }`). |
+
+##### Example Request Payload
+```json
+{
+  "project": "65f0a1b2c3d4e5f6a7b8c9d0",
+  "title": "Implement User Authentication Module",
+  "type": "Task",
+  "taskType": "Feature",
+  "priority": "65f0a1b2c3d4e5f6a7b8c9d1",
+  "status": "65f0a1b2c3d4e5f6a7b8c9d2",
+  "description": {
+    "message": "Set up JWT verification and RBAC guards.",
+    "linkedAttachment": []
+  },
+  "assignee": "65f0a1b2c3d4e5f6a7b8c9d3",
+  "assignees": ["65f0a1b2c3d4e5f6a7b8c9d4"],
+  "watchers": ["65f0a1b2c3d4e5f6a7b8c9d3"],
+  "startDate": "2026-09-25",
+  "dueDate": "2026-10-10",
+  "sla": 24,
+  "estimatedEffort": 40,
+  "labels": ["65f0a1b2c3d4e5f6a7b8c9d5"]
+}
+```
+
+##### Successful Response (`201 Created`)
+```json
+{
+  "statusCode": 201,
+  "message": "Successfully created task",
+  "data": {
+    "_id": "65f0b2c3d4e5f6a7b8c9d111",
+    "id": "PROJ-1",
+    "title": "Implement User Authentication Module",
+    "type": "Task",
+    "taskType": "Feature",
+    "project": {
+      "_id": "65f0a1b2c3d4e5f6a7b8c9d0",
+      "name": "Project Apollo",
+      "projectId": "PROJ",
+      "taskPrefix": "PROJ"
+    },
+    "priority": {
+      "_id": "65f0a1b2c3d4e5f6a7b8c9d1",
+      "name": "High",
+      "colorCode": "#EF4444"
+    },
+    "status": {
+      "_id": "65f0a1b2c3d4e5f6a7b8c9d2",
+      "name": "Open",
+      "colorCode": "#3B82F6"
+    },
+    "assignee": {
+      "_id": "65f0a1b2c3d4e5f6a7b8c9d3",
+      "legalName": "Jane Doe",
+      "workEmail": "jane.doe@company.com",
+      "avatar": "https://s3.amazonaws.com/.../avatar.png",
+      "employeeId": "EMP-101"
+    },
+    "assignees": [
+      {
+        "employeeId": "65f0a1b2c3d4e5f6a7b8c9d4",
+        "name": "John Smith",
+        "avatar": null
+      }
+    ],
+    "author": {
+      "_id": "65f0a1b2c3d4e5f6a7b8c9d9",
+      "legalName": "System Admin",
+      "workEmail": "admin@company.com"
+    },
+    "description": {
+      "message": "Set up JWT verification and RBAC guards.",
+      "linkedAttachment": []
+    },
+    "sla": 24,
+    "estimatedEffort": 40,
+    "depth": 0,
+    "childCount": 0,
+    "subtaskCount": 0,
+    "labels": [
+      {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d5",
+        "name": "Backend",
+        "color": "#10B981"
+      }
+    ],
+    "startDate": "2026-09-25T00:00:00.000Z",
+    "dueDate": "2026-10-10T00:00:00.000Z",
+    "createdAt": "2026-09-21T09:34:00.000Z",
+    "updatedAt": "2026-09-21T09:34:00.000Z"
+  }
+}
+```
+
+##### Failed Responses
+
+* **`400 Bad Request` — Missing required fields**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": [
+      "title should not be empty",
+      "title must be longer than or equal to 1 characters"
+    ],
+    "error": "Bad Request"
+  }
+  ```
+
+* **`400 Bad Request` — Missing required parent for Sub Task**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Parent task ID is required when creating a Sub Task.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`400 Bad Request` — Subtask SLA exceeds Parent SLA**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Subtask SLA cannot exceed parent task SLA. Subtask SLA: 30 hours, Parent task SLA: 24 hours",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`400 Bad Request` — Hierarchy Depth Exceeded (max 3 levels)**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Maximum hierarchy depth (3 levels) exceeded",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`401 Unauthorized`**:
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+* **`403 Forbidden` — Missing RBAC permission**:
+  ```json
+  {
+    "statusCode": 403,
+    "message": "Forbidden resource"
+  }
+  ```
+
+* **`404 Not Found` — Referenced Project Not Found**:
+  ```json
+  {
+    "statusCode": 404,
+    "message": "Project not found",
+    "error": "Not Found"
+  }
+  ```
+
+---
+
+#### 1.2 Read Task Collection (List Tasks)
+
+Retrieves a paginated list of tasks with hierarchical nesting (or flat format), grouping, and filtering options.
+
+* **HTTP Method**: `GET`
+* **Endpoint URL**: `http://api.stg.blazeup.ai/project-api/task`
+* **Controller**: [TaskController.getAll](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/task.controller.ts#L112)
+* **DTO**: [GetTaskDto](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/dto/get-task.dto.ts#L8)
+
+##### Query Parameters
+
+| Parameter | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `Scope` | `string` | No | Scope: `PROJECT` (default), `EMPLOYEE` ("My Tasks" assigned to caller), `PERSONAL` (no project). |
+| `projectIds` | `string` | **Conditional** | Comma-separated project IDs. **Required** when `Scope=PROJECT`; optional when `Scope=EMPLOYEE`. |
+| `page` | `number` | No | Page number (starts at 1). |
+| `limit` | `number` | No | Number of records per page (max 200, default 10). |
+| `flat` | `boolean` | No | `true`: returns a flat list instead of nesting into `childTasks[]` and `subTasks[]`. |
+| `includeStatusCounts`| `boolean` | No | `true`: includes overall status counts matching the filter in `statusCounts`. |
+| `search` | `string` | No | Search query across title and ID. |
+| `taskIds` | `string` | No | Comma-separated MongoDB ObjectIds (`taskIds=65f...,65f...`). |
+| `taskNumbers` | `string` | No | Comma-separated human task numbers (`taskNumbers=PROJ-1,PROJ-2`). |
+| `statuses` | `string` | No | Comma-separated status ObjectIds. |
+| `priorities` / `priority` | `string` | No | Comma-separated priority ObjectIds. |
+| `assignees` | `string` | No | Comma-separated assignee employee ObjectIds. |
+| `labels` | `string` | No | Comma-separated label ObjectIds. |
+| `groupBy` | `string` | No | Group by: `status`, `type`, `taskType`, `assignee`, `project`, `priority`, or `milestone`. |
+| `responseFields` | `string` | No | Comma-separated field projection whitelist (e.g. `title,status,priority`). |
+
+##### Example Request
+```http
+GET /project-api/task?projectIds=65f0a1b2c3d4e5f6a7b8c9d0&page=1&limit=10&flat=true HTTP/1.1
+Host: api.stg.blazeup.ai
+Authorization: Bearer <token>
+```
+
+##### Successful Response (`200 OK`)
+```json
+{
+  "message": "Fetched tasks successfully",
+  "data": [
+    {
+      "_id": "65f0b2c3d4e5f6a7b8c9d111",
+      "id": "PROJ-1",
+      "projectId": "PROJ",
+      "type": "Task",
+      "taskType": "Feature",
+      "title": "Implement User Authentication Module",
+      "description": {
+        "message": "Set up JWT verification and RBAC guards.",
+        "linkedAttachment": []
+      },
+      "status": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d2",
+        "name": "Open",
+        "colorCode": "#3B82F6"
+      },
+      "priority": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d1",
+        "name": "High",
+        "colorCode": "#EF4444"
+      },
+      "assignee": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d3",
+        "legalName": "Jane Doe",
+        "workEmail": "jane.doe@company.com",
+        "avatar": null,
+        "photoStorageRef": null,
+        "employeeId": "EMP-101"
+      },
+      "assignees": [],
+      "author": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d9",
+        "legalName": "System Admin",
+        "workEmail": "admin@company.com"
+      },
+      "parentTask": null,
+      "project": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d0",
+        "name": "Project Apollo",
+        "projectId": "PROJ",
+        "avatar": null
+      },
+      "startDate": "2026-09-25T00:00:00.000Z",
+      "dueDate": "2026-10-10T00:00:00.000Z",
+      "labels": [],
+      "ccList": [],
+      "mileStones": [],
+      "createdAt": "2026-09-21T09:34:00.000Z",
+      "updatedAt": "2026-09-21T09:34:00.000Z",
+      "customFields": {},
+      "linkedTask": [],
+      "sla": 24,
+      "childCount": 0,
+      "subtaskCount": null,
+      "incompleteSubtaskCount": null,
+      "blockingLinkedTaskCount": null,
+      "blockingLinkedTaskLabels": null,
+      "childTaskTotal": null,
+      "childTaskOpen": null,
+      "subTaskTotal": null,
+      "subTaskOpen": null,
+      "commentCount": 0
+    }
+  ],
+  "total": 1
+}
+```
+
+##### Failed Responses
+
+* **`400 Bad Request` — Missing `projectIds` when `Scope=PROJECT`**:
+  *(Note: If `projectIds` is omitted with `Scope=PROJECT`, the service safely returns `{ "message": "Fetched tasks successfully", "data": [], "total": 0 }` instead of throwing an unhandled exception).*
+* **`401 Unauthorized`**:
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+---
+
+#### 1.3 Update Single Task (Investigation & Resolution)
+
+> [!IMPORTANT]
+> **Resolution regarding `PATCH /project-api/task/{id}`:**
+> There is **no dedicated `PATCH /project-api/task/{id}` route** defined in [TaskController](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/task.controller.ts).
+>
+> In the Blazeup architecture, **single-task updates are intentionally handled by the bulk update endpoint (`PATCH /project-api/task/multiple`)** by providing a single task ID.
+>
+> As documented in [task-api-docs.ts](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/task-api-docs.ts#L250):
+> *"For Updating Tasks: Use `PATCH /task/multiple?ids=id1,id2,...`"*
+
+You can target a single task using either of these two methods:
+1. **Passing the ID in the query parameter**: `PATCH /project-api/task/multiple?ids=<taskId>`
+2. **Passing the ID in the body array**: `PATCH /project-api/task/multiple` with `{ "ids": ["<taskId>"], ... }`
+
+* **HTTP Method**: `PATCH`
+* **Endpoint URL**: `http://api.stg.blazeup.ai/project-api/task/multiple?ids={id}`
+* **Controller**: [TaskController.updateMultiple](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/task.controller.ts#L254)
+* **DTO**: [BulkUpdateTaskDto](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/dto/bulk-update-task.dto.ts#L9)
+
+##### Request Headers
+```http
+PATCH /project-api/task/multiple?ids=65f0b2c3d4e5f6a7b8c9d111 HTTP/1.1
+Host: api.stg.blazeup.ai
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+##### Request Payload (Body)
+Any subset of fields can be supplied:
+
+```json
+{
+  "title": "Implement User Authentication Module (Updated)",
+  "status": "65f0a1b2c3d4e5f6a7b8c9d7",
+  "priority": "65f0a1b2c3d4e5f6a7b8c9d8",
+  "assignee": "65f0a1b2c3d4e5f6a7b8c9d3",
+  "dueDate": "2026-10-20",
+  "sla": 30,
+  "estimatedEffort": 45
+}
+```
+
+##### Successful Response (`200 OK`)
+```json
+{
+  "message": "Your changes to the tasks have been saved!",
+  "data": {
+    "updatedCount": 1,
+    "taskIds": [
+      "65f0b2c3d4e5f6a7b8c9d111"
+    ]
+  }
+}
+```
+
+##### Failed Responses
+
+* **`400 Bad Request` — Attempting to edit a completed task (without reopening)**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Cannot update completed task. Reopen the task to make changes.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`400 Bad Request` — Updating assignee directly on a Sub Task**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Assignee cannot be updated directly on a Sub Task. Change the assignee on its parent child task - it cascades down automatically. Child tasks own their own assignee and can be edited directly.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`400 Bad Request` — Self-referencing linked tasks**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "A task cannot link to itself.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`400 Bad Request` — Task ID not found**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Task 65f0b2c3d4e5f6a7b8c9d999 not found",
+    "error": "Bad Request"
+  }
+  ```
+
+---
+
+### 2. Filtered Fetch (Task Number & Assignee)
+
+> [!WARNING]
+> **Exact Query Parameter Names Required:**
+> In [GetTaskDto](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/dto/get-task.dto.ts#L170), the query parameters are named:
+> * **`taskNumbers`** (plural), NOT `number`.
+> * **`assignees`** (plural), NOT `assignee`.
+>
+> Because NestJS uses `whitelist: true` in its validation pipe, passing `?number=PROJ-1&assignee=...` will be **silently ignored/stripped**. Always use `taskNumbers` and `assignees`.
+
+* **HTTP Method**: `GET`
+* **Endpoint URL**: `http://api.stg.blazeup.ai/project-api/task?taskNumbers=[x]&assignees=[y]`
+* **Controller**: [TaskController.getAll](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/task.controller.ts#L112)
+
+##### Request Example
+```http
+GET /project-api/task?taskNumbers=PROJ-1&assignees=65f0a1b2c3d4e5f6a7b8c9d3&Scope=EMPLOYEE HTTP/1.1
+Host: api.stg.blazeup.ai
+Authorization: Bearer <token>
+```
+*(Tip: When filtering across specific projects, add `&projectIds=65f0a1b2c3d4e5f6a7b8c9d0`. If you omit `projectIds`, pass `Scope=EMPLOYEE` to avoid the project filter constraint).*
+
+##### Query Parameters Breakdown
+* `taskNumbers`: Single human task ID string or comma-separated list (e.g. `PROJ-1` or `PROJ-1,PROJ-2`).
+* `assignees`: Single employee MongoDB ObjectId or comma-separated list (e.g. `65f0a1b2c3d4e5f6a7b8c9d3`).
+
+##### Successful Response (`200 OK`)
+```json
+{
+  "message": "Fetched tasks successfully",
+  "data": [
+    {
+      "_id": "65f0b2c3d4e5f6a7b8c9d111",
+      "id": "PROJ-1",
+      "projectId": "PROJ",
+      "type": "Task",
+      "taskType": "Feature",
+      "title": "Implement User Authentication Module",
+      "description": {
+        "message": "Set up JWT verification and RBAC guards.",
+        "linkedAttachment": []
+      },
+      "status": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d2",
+        "name": "Open",
+        "colorCode": "#3B82F6"
+      },
+      "priority": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d1",
+        "name": "High",
+        "colorCode": "#EF4444"
+      },
+      "assignee": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d3",
+        "legalName": "Jane Doe",
+        "workEmail": "jane.doe@company.com",
+        "avatar": null,
+        "photoStorageRef": null,
+        "employeeId": "EMP-101"
+      },
+      "assignees": [],
+      "author": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d9",
+        "legalName": "System Admin",
+        "workEmail": "admin@company.com"
+      },
+      "parentTask": null,
+      "project": {
+        "_id": "65f0a1b2c3d4e5f6a7b8c9d0",
+        "name": "Project Apollo",
+        "projectId": "PROJ",
+        "avatar": null
+      },
+      "startDate": "2026-09-25T00:00:00.000Z",
+      "dueDate": "2026-10-10T00:00:00.000Z",
+      "labels": [],
+      "ccList": [],
+      "mileStones": [],
+      "createdAt": "2026-09-21T09:34:00.000Z",
+      "updatedAt": "2026-09-21T09:34:00.000Z",
+      "childCount": 0
+    }
+  ],
+  "total": 1
+}
+```
+
+##### Failed Responses
+
+* **`400 Bad Request` — Invalid parameter formatting**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Invalid query parameter",
+    "error": "Bad Request"
+  }
+  ```
+* **`401 Unauthorized`**:
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+---
+
+### 3. Bulk Operations
+
+---
+
+#### 3.1 Bulk Update Tasks (Regular Update)
+
+Updates up to 1,000 tasks atomically in a single MongoDB transaction. Handles assignee cascade to subtasks, project moves with automatic re-prefixing/renumbering, and event publishing (`task.status.changed`, `task.assigned`).
+
+* **HTTP Method**: `PATCH`
+* **Endpoint URL**: `http://api.stg.blazeup.ai/project-api/task/multiple`
+* **Controller**: [TaskController.updateMultiple](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/task.controller.ts#L254)
+* **Service**: [TaskBulkUpdateService.updateMultiple](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/services/task-bulk-update.service.ts#L283)
+* **DTO**: [BulkUpdateTaskDto](file:///E:/VS%20CODE/Blazeup/blazeup-microservice-project/src/modules/task/dto/bulk-update-task.dto.ts#L9)
+
+##### Query Parameters
+* `ids` *(Optional if supplied in request body)*: Comma-separated MongoDB ObjectIds (`?ids=65f...,65f...`).
+
+##### Request Payload (Body)
+
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `ids` | `string[]` (ObjectIds) | **Yes** *(or via query)* | Array of task ObjectIds to update (max 1000). |
+| `status` | `string` (ObjectId) | No | New status ID (automatically sets `completedDate` and `endDate` if status is "Completed", or unsets them if reopening). |
+| `priority` | `string` (ObjectId) | No | New priority ID. |
+| `assignee` | `string` | No | Employee email or MongoDB ObjectId. Pass `null` or `""` to clear assignee. |
+| `assignees` | `string[]` (ObjectIds) | No | Additional assignee employee IDs. |
+| `project` | `string` (ObjectId) | No | Move tasks to another project (automatically regenerates IDs and re-parents children). |
+| `dueDate` | `string` (ISO 8601) | No | Updated due date. |
+| `startDate` | `string` (ISO 8601) | No | Updated start date. |
+| `labels` | `string[]` (ObjectIds) | No | Updated label IDs. |
+| `watchers` | `string[]` (ObjectIds) | No | Updated watcher employee IDs. |
+| `sla` | `number` | No | Updated SLA in hours. |
+| `estimatedEffort` | `number` | No | Updated estimated effort in hours. |
+| `linkedTask` | `string[]` (ObjectIds) | No | Linked task IDs (self-linking is blocked). |
+
+##### Example Request Payload
+```json
+{
+  "ids": [
+    "65f0b2c3d4e5f6a7b8c9d111",
+    "65f0b2c3d4e5f6a7b8c9d222"
+  ],
+  "status": "65f0a1b2c3d4e5f6a7b8c9d7",
+  "priority": "65f0a1b2c3d4e5f6a7b8c9d8",
+  "dueDate": "2026-10-31",
+  "labels": ["65f0a1b2c3d4e5f6a7b8c9d5"]
+}
+```
+
+##### Successful Response (`200 OK`)
+```json
+{
+  "message": "Your changes to the tasks have been saved!",
+  "data": {
+    "updatedCount": 2,
+    "taskIds": [
+      "65f0b2c3d4e5f6a7b8c9d111",
+      "65f0b2c3d4e5f6a7b8c9d222"
+    ]
+  }
+}
+```
+
+##### Failed Responses
+
+* **`400 Bad Request` — Exceeded batch size**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Cannot update more than 1000 tasks at once. Please split into smaller batches.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`400 Bad Request` — Missing task IDs**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "At least one task ID is required in the ids field",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`400 Bad Request` — Blocked Assignee Update on Sub Task**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Assignee cannot be updated directly on a Sub Task. Change the assignee on its parent child task - it cascades down automatically. Child tasks own their own assignee and can be edited directly.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`401 Unauthorized`**:
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+---
+
+#### 3.2 Bulk Scope Operations: Comments & Attachments
+
+When the `Scope` query parameter is provided on `PATCH /project-api/task/multiple`, the endpoint handles comment additions, comment modifications, comment deletions, or attachment removals.
+
+##### A. Scope: `add-comment`
+* **URL**: `PATCH /project-api/task/multiple?Scope=add-comment`
+* **Request Payload**:
+  ```json
+  {
+    "ids": ["65f0b2c3d4e5f6a7b8c9d111"],
+    "comment": [
+      {
+        "description": "Deployment is complete and verification in progress.",
+        "documents": ["65f0a1b2c3d4e5f6a7b8c999"]
+      }
+    ]
+  }
+  ```
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "message": "Your changes to the tasks have been saved!",
+    "data": {
+      "updatedCount": 1,
+      "taskIds": ["65f0b2c3d4e5f6a7b8c9d111"],
+      "commentsAdded": 1
+    }
+  }
+  ```
+
+##### B. Scope: `update-comment`
+* **URL**: `PATCH /project-api/task/multiple?Scope=update-comment`
+* **Request Payload**:
+  ```json
+  {
+    "ids": ["65f0b2c3d4e5f6a7b8c9d111"],
+    "commentId": "65f0c3d4e5f6a7b8c9d11222",
+    "comment": [
+      {
+        "description": "Updated comment text with revised timeline."
+      }
+    ]
+  }
+  ```
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "message": "Your changes to the tasks have been saved!",
+    "data": {
+      "updatedCount": 1,
+      "taskIds": ["65f0b2c3d4e5f6a7b8c9d111"],
+      "commentId": "65f0c3d4e5f6a7b8c9d11222"
+    }
+  }
+  ```
+
+##### C. Scope: `delete-comment`
+* **URL**: `PATCH /project-api/task/multiple?Scope=delete-comment`
+* **Request Payload**:
+  ```json
+  {
+    "ids": ["65f0b2c3d4e5f6a7b8c9d111"],
+    "commentId": "65f0c3d4e5f6a7b8c9d11222"
+  }
+  ```
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "message": "Your changes to the tasks have been saved!",
+    "data": {
+      "updatedCount": 1,
+      "taskIds": ["65f0b2c3d4e5f6a7b8c9d111"],
+      "commentId": "65f0c3d4e5f6a7b8c9d11222"
+    }
+  }
+  ```
+
+##### D. Scope: `delete-attachment`
+* **URL**: `PATCH /project-api/task/multiple?Scope=delete-attachment`
+* **Request Payload**:
+  ```json
+  {
+    "ids": ["65f0b2c3d4e5f6a7b8c9d111"],
+    "attachmentId": "65f0a1b2c3d4e5f6a7b8c999",
+    "commentId": "65f0c3d4e5f6a7b8c9d11222" // optional: only needed if deleting attachment inside a comment
+  }
+  ```
+* **Success Response (`200 OK`)**:
+  ```json
+  {
+    "message": "Your changes to the tasks have been saved!",
+    "data": {
+      "updatedCount": 1,
+      "taskIds": ["65f0b2c3d4e5f6a7b8c9d111"],
+      "attachmentId": "65f0a1b2c3d4e5f6a7b8c999"
+    }
+  }
+  ```
+
+* **Failure Response for Invalid Scope DTO (`400 Bad Request`)**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Invalid DTO structure for DELETE_COMMENT scope. Required: ids (array), commentId. Must NOT have: comment",
+    "error": "Bad Request"
+  }
+  ```
+
+---
+
+### Summary Checklist of URLs & Operations
+
+| Purpose | Method | Exact URL | Notes |
+| :--- | :--- | :--- | :--- |
+| **Create Task** | `POST` | `/project-api/task` | Requires `title`, `project`, `priority`, `status` (unless `isPersonal: true`). |
+| **List Tasks** | `GET` | `/project-api/task` | Requires `projectIds` when `Scope=PROJECT`. |
+| **Single Task Update** | `PATCH` | `/project-api/task/multiple?ids={id}` | Passes a single ID into the bulk update endpoint. |
+| **Filtered Fetch** | `GET` | `/project-api/task?taskNumbers={x}&assignees={y}` | Use plural `taskNumbers` and `assignees` to avoid whitelist stripping. |
+| **Bulk Task Update** | `PATCH` | `/project-api/task/multiple` | Body carries `ids: [...]` and update fields (max 1000). |
+| **Add Comment** | `PATCH` | `/project-api/task/multiple?Scope=add-comment` | Body carries `ids` and `comment: [{ description, documents }]`. |
+| **Update Comment** | `PATCH` | `/project-api/task/multiple?Scope=update-comment`| Body carries `ids`, `commentId`, and updated `comment`. |
+| **Delete Comment** | `PATCH` | `/project-api/task/multiple?Scope=delete-comment`| Body carries `ids` and `commentId`. |

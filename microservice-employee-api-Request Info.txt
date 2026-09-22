@@ -1,0 +1,1029 @@
+
+
+### Global Configuration & Authentication
+
+* **Base URL**: `http://api.stg.blazeup.ai/employees-api` and `APP_CONTEXT=employees-api` in `.env`)
+* **Global Prefix**: `/${APP_CONTEXT}` (`/employees-api`)
+* **Standard Headers**:
+  ```http
+  Authorization: Bearer <JWT_TOKEN>
+  Content-Type: application/json
+  ```
+* **Standard NestJS Error Envelope**:
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Error description string or array of validation errors",
+    "error": "Bad Request"
+  }
+  ```
+
+---
+
+## 1. POST `/employees-api/employees` — Create a New Employee
+
+* **Method**: `POST`
+* **Full URL**: `http://api.stg.blazeup.ai/employees-api/employees`
+* **Controller**: [EmployeeController.create](file:///e:/VS%20CODE/Blazeup/blazeup-microservice-employee/src/modules/employee/controllers/employee.controller.ts#L48-L57)
+* **Access**: HR / Admin only (guarded by `@AuthMethod(IS_AUTHORIZATION_KEY)`)
+
+### Request Headers
+```http
+Content-Type: application/json
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Request Payload (`CreateEmployeeDto`)
+
+#### Required Fields:
+* `employmentType` *(String enum)*: `"REGULAR"` | `"CONTRACT"` | `"INTERN"` | `"CONSULTANT"`
+* `employmentBasis` *(Object)*: Reference object `{ "_id": "<24-hex-ObjectId>", "name": "Full Time" }`
+* `hireDate` *(String)*: Date in `"YYYY-MM-DD"` format
+* `personalInfo` *(Object)*:
+  * `firstName` *(String)*: Required, sanitized string
+  * `lastName` *(String)*: Required, sanitized string
+  * `dob` *(String)*: Date in `"YYYY-MM-DD"` format
+  * `gender` *(String enum)*: `"MALE"` | `"FEMALE"` | `"NON_BINARY"` | `"PREFER_NOT_TO_SAY"`
+  * `contact`:
+    * `workEmail` *(String)*: Valid unique corporate email address
+* `employmentDetail` *(Object)*:
+  * `department` *(Object)*:
+    * `_id` *(String)*: 24-character hexadecimal MongoDB ObjectId
+    * `departmentId` *(String)*: 12-digit hierarchy subnet code (e.g. `"100103000000"`)
+    * `name` *(String, optional)*: Department name
+  * `jobTitle` *(Object)*:
+    * `_id` *(String, optional)*: 24-character hexadecimal MongoDB ObjectId
+    * `name` *(String, optional)*: Job title name
+
+> [!IMPORTANT]
+> **Validation rules to keep in mind:**
+> 1. If `personalInfo.emergencyContacts` is supplied, **exactly one contact must have `"isPrimary": true`** (`assertPrimaryEmergencyContact`).
+> 2. `personalInfo.maritalStatus` is optional in the DTO; if omitted, the service automatically defaults it to `"PREFER_NOT_TO_SAY"`.
+> 3. `personalInfo.contact.userId` is optional; if omitted, it is auto-derived from the prefix before `@` in `workEmail`.
+> 4. System default agents (`internalEmployee.isDefault: true`) cannot be created through this endpoint (`403 Forbidden`).
+
+#### Full Example Request Payload:
+```json
+{
+  "employmentType": "REGULAR",
+  "employmentBasis": {
+    "_id": "664260096f4d29a21cb74ffa",
+    "name": "Full Time"
+  },
+  "hireDate": "2026-10-01",
+  "employeeId": "EMP-1001",
+  "isCompOffEligible": true,
+  "employmentRegion": "NORTH_AMERICA",
+  "personalInfo": {
+    "prefix": "MR",
+    "firstName": "Alex",
+    "middleName": "James",
+    "lastName": "Rivera",
+    "suffix": "JR",
+    "preferredName": "Alex",
+    "legalFullName": "Alex James Rivera",
+    "dob": "1994-05-15",
+    "gender": "MALE",
+    "maritalStatus": "SINGLE",
+    "nationality": "US",
+    "bloodType": "O_POSITIVE",
+    "contact": {
+      "workEmail": "alex.rivera@example.com",
+      "userId": "alex.rivera",
+      "personalEmail": "alex.rivera.personal@gmail.com",
+      "workPhone": {
+        "countryCode": "+1",
+        "number": "5550192834"
+      },
+      "personalPhone": {
+        "countryCode": "+1",
+        "number": "5550192839"
+      },
+      "preferredContactMethod": "WORK_EMAIL"
+    },
+    "address": {
+      "isSameAsPermanent": true,
+      "permanent": {
+        "line1": "123 Tech Blvd",
+        "line2": "Suite 400",
+        "city": "Austin",
+        "stateProvince": "TX",
+        "postalCode": "78701",
+        "country": "United States"
+      }
+    },
+    "emergencyContacts": [
+      {
+        "name": "Maria Rivera",
+        "relationship": "SPOUSE",
+        "isPrimary": true,
+        "phone": {
+          "countryCode": "+1",
+          "number": "5550192835"
+        },
+        "email": "maria.rivera@example.com"
+      }
+    ],
+    "linkedinId": "alex-rivera-101"
+  },
+  "employmentDetail": {
+    "department": {
+      "_id": "66425e9f8ab88ca5ceb01a84",
+      "departmentId": "100103000000",
+      "name": "Engineering"
+    },
+    "jobTitle": {
+      "_id": "6641921547dd555648815c87",
+      "name": "Senior Software Engineer"
+    },
+    "reportingManager": "6641921547dd555648815c80",
+    "workMode": "HYBRID"
+  },
+  "probation": {
+    "isOnProbation": true,
+    "startDate": "2026-10-01",
+    "durationMonths": 3
+  },
+  "userGroups": [
+    "664260096f4d29a21cb74ffb"
+  ],
+  "sendCredentialsEmail": false
+}
+```
+
+### Success Response (`201 Created`):
+```json
+{
+  "data": {
+    "_id": "66f01234567890abcdef1234",
+    "tenantId": "tenant-default",
+    "employeeId": "EMP-1001",
+    "employmentType": "REGULAR",
+    "employmentBasis": {
+      "_id": "664260096f4d29a21cb74ffa",
+      "name": "Full Time"
+    },
+    "status": "ACTIVE",
+    "isActive": true,
+    "isDeleted": false,
+    "hireDate": "2026-10-01",
+    "originalHireDate": "2026-10-01",
+    "profileCompletionPercentage": 0,
+    "personalInfo": {
+      "prefix": "MR",
+      "firstName": "Alex",
+      "middleName": "James",
+      "lastName": "Rivera",
+      "preferredName": "Alex",
+      "dob": "1994-05-15",
+      "gender": "MALE",
+      "maritalStatus": "SINGLE",
+      "contact": {
+        "workEmail": "alex.rivera@example.com",
+        "userId": "alex.rivera",
+        "personalEmail": "alex.rivera.personal@gmail.com",
+        "workPhone": {
+          "countryCode": "+1",
+          "number": "5550192834"
+        }
+      },
+      "address": {
+        "isSameAsPermanent": true,
+        "permanent": {
+          "line1": "123 Tech Blvd",
+          "city": "Austin",
+          "stateProvince": "TX",
+          "postalCode": "78701",
+          "country": "United States"
+        },
+        "current": {
+          "line1": "123 Tech Blvd",
+          "city": "Austin",
+          "stateProvince": "TX",
+          "postalCode": "78701",
+          "country": "United States"
+        }
+      },
+      "emergencyContacts": [
+        {
+          "name": "Maria Rivera",
+          "relationship": "SPOUSE",
+          "isPrimary": true,
+          "phone": {
+            "countryCode": "+1",
+            "number": "5550192835"
+          }
+        }
+      ]
+    },
+    "employmentDetail": {
+      "department": {
+        "_id": "66425e9f8ab88ca5ceb01a84",
+        "departmentId": "100103000000",
+        "name": "Engineering"
+      },
+      "jobTitle": {
+        "_id": "6641921547dd555648815c87",
+        "name": "Senior Software Engineer"
+      },
+      "reportingManager": {
+        "_id": "6641921547dd555648815c80",
+        "employeeId": "EMP-0005",
+        "name": "Sarah Connor",
+        "jobTitle": "Engineering Director"
+      },
+      "workMode": "HYBRID"
+    },
+    "probation": {
+      "isOnProbation": true,
+      "startDate": "2026-10-01",
+      "durationMonths": 3,
+      "endDate": "2027-01-01"
+    },
+    "availability": {
+      "status": "offline",
+      "changedAt": null,
+      "source": null
+    },
+    "userGroups": [
+      "664260096f4d29a21cb74ffb"
+    ]
+  },
+  "message": "Employee created successfully."
+}
+```
+
+### Failure Responses:
+
+* **`400 Bad Request` — Validation / Business Rules Failure:**
+  ```json
+  {
+    "statusCode": 400,
+    "message": [
+      "employmentType must be one of the following values: REGULAR, CONTRACT, INTERN, CONSULTANT",
+      "personalInfo.contact.workEmail must be an email"
+    ],
+    "error": "Bad Request"
+  }
+  ```
+  *Or emergency contacts rule violation:*
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Exactly one emergency contact must be marked as primary.",
+    "error": "Bad Request"
+  }
+  ```
+  *Or duplicate employeeId manually provided:*
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Employee ID 'EMP-1001' is already in use.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`401 Unauthorized` — Missing or invalid token:**
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+* **`403 Forbidden` — Default agent creation attempted or lacking HR permissions:**
+  ```json
+  {
+    "statusCode": 403,
+    "message": "Default agents are system-provisioned and cannot be created via API.",
+    "error": "Forbidden"
+  }
+  ```
+
+* **`409 Conflict` — Work Email or User ID Collision:**
+  ```json
+  {
+    "statusCode": 409,
+    "message": "Work email 'alex.rivera@example.com' is already in use.",
+    "error": "Conflict"
+  }
+  ```
+
+---
+
+## 2. GET `/employees-api/employees` — List Employees
+
+* **Method**: `GET`
+* **Full URL**: `http://api.stg.blazeup.ai/employees-api/employees`
+* **Controller**: [EmployeeController.list](file:///e:/VS%20CODE/Blazeup/blazeup-microservice-employee/src/modules/employee/controllers/employee.controller.ts#L61-L103)
+* **Access**: RBAC-gated. Non-privileged regular employees are restricted to `scope=team` (or targeted lookup with `employeeId`).
+
+### Request Headers
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Query Parameters (`FilterEmployeeDto`):
+* `page` *(number, optional)*: Page index (default: `1`)
+* `limit` *(number, optional)*: Page size (e.g. `20`)
+* `sort` *(string, optional)*: Sorting field (e.g. `hireDate:desc`)
+* `search` *(string, optional)*: Full-text match on `employeeId`, legal name, or `workEmail`
+* `employeeId` *(string, optional)*: Exact human-readable ID match (case-insensitive)
+* `status` *(string enum, optional)*: `"ACTIVE"` | `"INACTIVE"` | `"SUSPENDED"`
+* `employmentType` *(string enum, optional)*: `"REGULAR"` | `"CONTRACT"` | `"INTERN"` | `"CONSULTANT"`
+* `employmentBasis` *(string, optional)*: Name of employment basis (e.g. `"Full Time"`)
+* `employmentRegion` *(string enum, optional)*: `"SOUTH_ASIA"` | `"SOUTHEAST_ASIA"` | `"MIDDLE_EAST"` | `"NORTH_AMERICA"` | `"EUROPE"` | `"OTHER"`
+* `workMode` *(string enum, optional)*: `"ON_SITE"` | `"REMOTE"` | `"HYBRID"`
+* `departmentId`, `divisionId`, `legalEntityId`, `reportingManagerId`, `jobTitleId`, `timePlanId` *(string ObjectId, optional)*
+* `campusId` *(string ObjectId or comma-separated ObjectIds, optional)*
+* `hireDateFrom`, `hireDateTo` *(string, optional)*: `"YYYY-MM-DD"`
+* `lastWorkingDayFrom`, `lastWorkingDayTo` *(string, optional)*: `"YYYY-MM-DD"`
+* `isActive` *(boolean, optional)*: `true` | `false`
+* `includeInternal` *(boolean, optional)*: `true` to include Blazey bots/agents (default `false`)
+* `includeDeleted` *(boolean, optional)*: `true` to include soft-deleted records (default `false`)
+* `skill` *(string, optional)*: Free-text match on skill name
+* `jobTitle` *(string, optional)*: Free-text match on job title
+* `groupBy` *(string enum, optional)*: `department` | `reportingManager` | `campus` | `legalEntity` | `jobGrade` | `employeeType` | `division` | `workMode`
+* `responseFields` *(string, optional)*: Comma-separated whitelist of fields to project (e.g. `?responseFields=employeeId,personalInfo,employmentDetail,status`)
+* `scope` *(string enum, optional)*:
+  * **View scopes**: `"company"` | `"joined"` | `"left"` | `"team"`
+  * **Directory dispatch scopes**: `"internal"` | `"search"` | `"by-phone"` *(requires `&phone=<number>`)*
+
+### Request Payload:
+*None (GET request).*
+
+### Success Response (`200 OK`):
+```json
+{
+  "data": [
+    {
+      "_id": "66f01234567890abcdef1234",
+      "employeeId": "EMP-1001",
+      "status": "ACTIVE",
+      "isActive": true,
+      "hireDate": "2026-10-01",
+      "employmentType": "REGULAR",
+      "personalInfo": {
+        "firstName": "Alex",
+        "lastName": "Rivera",
+        "contact": {
+          "workEmail": "alex.rivera@example.com",
+          "workPhone": {
+            "countryCode": "+1",
+            "number": "5550192834"
+          }
+        }
+      },
+      "employmentDetail": {
+        "department": {
+          "_id": "66425e9f8ab88ca5ceb01a84",
+          "departmentId": "100103000000",
+          "name": "Engineering"
+        },
+        "jobTitle": {
+          "_id": "6641921547dd555648815c87",
+          "name": "Senior Software Engineer"
+        },
+        "reportingManager": {
+          "_id": "6641921547dd555648815c80",
+          "employeeId": "EMP-0005",
+          "name": "Sarah Connor",
+          "jobTitle": "Engineering Director"
+        },
+        "workMode": "HYBRID"
+      }
+    }
+  ],
+  "total": 1,
+  "message": "Employees fetched successfully"
+}
+```
+
+### Failure Responses:
+
+* **`400 Bad Request` — Invalid Parameter or Scope:**
+  ```json
+  {
+    "statusCode": 400,
+    "message": [
+      "status must be one of the following values: ACTIVE, INACTIVE, SUSPENDED"
+    ],
+    "error": "Bad Request"
+  }
+  ```
+
+* **`401 Unauthorized`:**
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+* **`403 Forbidden` — Regular employee browsing directory without team scope:**
+  ```json
+  {
+    "statusCode": 403,
+    "message": "You do not have permission to view the full employee directory. Use scope=team to access your team.",
+    "error": "Forbidden"
+  }
+  ```
+
+---
+
+## 3. GET `/employees-api/employees/{id}` — Get Employee by ID
+
+* **Method**: `GET`
+* **Full URL**: `http://api.stg.blazeup.ai/employees-api/employees/:id`
+* **Controller**: [EmployeeController.findById](file:///e:/VS%20CODE/Blazeup/blazeup-microservice-employee/src/modules/employee/controllers/employee.controller.ts#L319-L331)
+* **Access**: RBAC-gated.
+
+### Path & Query Parameters:
+* **`:id`** *(Required)*: 24-character hex MongoDB ObjectId OR `personalInfo.contact.userId` string (e.g. `66f01234567890abcdef1234` or `alex.rivera`)
+* **`responseFields`** *(Optional)*: Comma-separated field names to limit projection (e.g. `?responseFields=personalInfo,banking,employmentDetail`)
+
+### Request Headers
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Request Payload:
+*None (GET request).*
+
+### Success Response (`200 OK`):
+```json
+{
+  "data": {
+    "_id": "66f01234567890abcdef1234",
+    "employeeId": "EMP-1001",
+    "status": "ACTIVE",
+    "isActive": true,
+    "isDeleted": false,
+    "employmentType": "REGULAR",
+    "employmentBasis": {
+      "_id": "664260096f4d29a21cb74ffa",
+      "name": "Full Time"
+    },
+    "hireDate": "2026-10-01",
+    "originalHireDate": "2026-10-01",
+    "profileCompletionPercentage": 0,
+    "personalInfo": {
+      "prefix": "MR",
+      "firstName": "Alex",
+      "lastName": "Rivera",
+      "dob": "1994-05-15",
+      "gender": "MALE",
+      "maritalStatus": "SINGLE",
+      "contact": {
+        "workEmail": "alex.rivera@example.com",
+        "userId": "alex.rivera",
+        "personalEmail": "alex.rivera.personal@gmail.com",
+        "workPhone": {
+          "countryCode": "+1",
+          "number": "5550192834"
+        }
+      },
+      "address": {
+        "isSameAsPermanent": true,
+        "permanent": {
+          "line1": "123 Tech Blvd",
+          "city": "Austin",
+          "stateProvince": "TX",
+          "postalCode": "78701",
+          "country": "United States"
+        }
+      },
+      "emergencyContacts": [
+        {
+          "name": "Maria Rivera",
+          "relationship": "SPOUSE",
+          "isPrimary": true,
+          "phone": {
+            "countryCode": "+1",
+            "number": "5550192835"
+          }
+        }
+      ]
+    },
+    "employmentDetail": {
+      "department": {
+        "_id": "66425e9f8ab88ca5ceb01a84",
+        "departmentId": "100103000000",
+        "name": "Engineering"
+      },
+      "jobTitle": {
+        "_id": "6641921547dd555648815c87",
+        "name": "Senior Software Engineer"
+      },
+      "reportingManager": {
+        "_id": "6641921547dd555648815c80",
+        "employeeId": "EMP-0005",
+        "name": "Sarah Connor",
+        "jobTitle": "Engineering Director"
+      },
+      "workMode": "HYBRID"
+    },
+    "availability": {
+      "status": "offline",
+      "changedAt": null,
+      "source": null
+    },
+    "userGroups": [
+      "664260096f4d29a21cb74ffb"
+    ]
+  },
+  "message": "Employee fetched successfully"
+}
+```
+*(Note: If caller is a peer without elevated permissions, personal PII like personal email, personal phone, and government IDs are automatically masked/omitted according to the 4-tier field-access model).*
+
+### Failure Responses:
+
+* **`400 Bad Request` — Invalid `responseFields` whitelist:**
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Field 'invalidFieldName' is not allowed in responseFields.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`401 Unauthorized`:**
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+* **`403 Forbidden` — Restricted record access:**
+  ```json
+  {
+    "statusCode": 403,
+    "message": "Restricted records can only be viewed by authorized HR personnel.",
+    "error": "Forbidden"
+  }
+  ```
+
+* **`404 Not Found` — Employee does not exist:**
+  ```json
+  {
+    "statusCode": 404,
+    "message": "Employee not found",
+    "error": "Not Found"
+  }
+  ```
+
+---
+
+## 4. GET `/employees-api/employees/my-profile` — Get Authenticated User's Own Profile
+
+* **Method**: `GET`
+* **Full URL**: `http://api.stg.blazeup.ai/employees-api/employees/my-profile`
+* **Controller**: [MyProfileController.getMyProfile](file:///e:/VS%20CODE/Blazeup/blazeup-microservice-employee/src/modules/employee/controllers/my-profile.controller.ts#L71-L88)
+* **Access**: Authenticated user (`@AuthMethod(IS_AUTHENTICATION_KEY)`). Reads caller identity strictly from JWT token (`this.user.employee._id` or `this.user.employee.generalInfo.workEmail`).
+
+### Request Headers
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Path / Query Parameters / Request Payload:
+*None. Caller identity is extracted exclusively from the decoded JWT.*
+
+### Success Response (`200 OK`):
+```json
+{
+  "data": {
+    "_id": "66f01234567890abcdef1234",
+    "employeeId": "EMP-1001",
+    "status": "ACTIVE",
+    "isActive": true,
+    "employmentType": "REGULAR",
+    "hireDate": "2026-10-01",
+    "personalInfo": {
+      "firstName": "Alex",
+      "lastName": "Rivera",
+      "preferredName": "Alex",
+      "dob": "1994-05-15",
+      "gender": "MALE",
+      "maritalStatus": "SINGLE",
+      "contact": {
+        "workEmail": "alex.rivera@example.com",
+        "userId": "alex.rivera",
+        "personalEmail": "alex.rivera.personal@gmail.com",
+        "workPhone": {
+          "countryCode": "+1",
+          "number": "5550192834"
+        }
+      },
+      "address": {
+        "isSameAsPermanent": true,
+        "permanent": {
+          "line1": "123 Tech Blvd",
+          "city": "Austin",
+          "stateProvince": "TX",
+          "postalCode": "78701",
+          "country": "United States"
+        }
+      },
+      "emergencyContacts": [
+        {
+          "name": "Maria Rivera",
+          "relationship": "SPOUSE",
+          "isPrimary": true,
+          "phone": {
+            "countryCode": "+1",
+            "number": "5550192835"
+          }
+        }
+      ]
+    },
+    "employmentDetail": {
+      "department": {
+        "_id": "66425e9f8ab88ca5ceb01a84",
+        "name": "Engineering"
+      },
+      "jobTitle": {
+        "_id": "6641921547dd555648815c87",
+        "name": "Senior Software Engineer"
+      },
+      "reportingManager": {
+        "_id": "6641921547dd555648815c80",
+        "employeeId": "EMP-0005",
+        "name": "Sarah Connor",
+        "jobTitle": "Engineering Director"
+      },
+      "workMode": "HYBRID"
+    },
+    "userGroups": [
+      "664260096f4d29a21cb74ffb"
+    ],
+    "timeoffTypes": []
+  },
+  "message": "Employee profile fetched successfully"
+}
+```
+
+### Failure Responses:
+
+* **`401 Unauthorized`:**
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+* **`404 Not Found` — Token valid but no employee profile exists:**
+  ```json
+  {
+    "statusCode": 404,
+    "message": "Employee profile not found for the authenticated user (id=66f01234567890abcdef1234, email=alex.rivera@example.com).",
+    "error": "Not Found"
+  }
+  ```
+
+---
+
+## 5. PATCH `/employees-api/employees/{id}` — Update Employee (Partial PATCH)
+
+* **Method**: `PATCH`
+* **Full URL**: `http://api.stg.blazeup.ai/employees-api/employees/:id`
+* **Controller**: [EmployeeController.update](file:///e:/VS%20CODE/Blazeup/blazeup-microservice-employee/src/modules/employee/controllers/employee.controller.ts#L335-L346)
+* **Access**: HR / Admin (or Self updating allowed personal fields; HR-managed fields like `employmentDetail`, `workMode`, `probation`, `status` are stripped silently on self-service).
+
+### Request Headers
+```http
+Content-Type: application/json
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Path Parameter:
+* **`:id`** *(Required)*: 24-character hexadecimal MongoDB ObjectId
+
+### Request Payload (`UpdateEmployeeDto`):
+All fields from `CreateEmployeeDto` are **optional**. Send only fields to change.
+
+#### Example Request Payload:
+```json
+{
+  "employmentDetail": {
+    "workMode": "REMOTE"
+  },
+  "personalInfo": {
+    "preferredName": "Alex R.",
+    "contact": {
+      "personalEmail": "alex.newemail@example.com"
+    }
+  }
+}
+```
+
+### Success Response (`200 OK`):
+```json
+{
+  "data": {
+    "_id": "66f01234567890abcdef1234",
+    "employeeId": "EMP-1001",
+    "status": "ACTIVE",
+    "personalInfo": {
+      "firstName": "Alex",
+      "lastName": "Rivera",
+      "preferredName": "Alex R.",
+      "contact": {
+        "workEmail": "alex.rivera@example.com",
+        "personalEmail": "alex.newemail@example.com"
+      }
+    },
+    "employmentDetail": {
+      "workMode": "REMOTE",
+      "department": {
+        "_id": "66425e9f8ab88ca5ceb01a84",
+        "departmentId": "100103000000",
+        "name": "Engineering"
+      },
+      "jobTitle": {
+        "_id": "6641921547dd555648815c87",
+        "name": "Senior Software Engineer"
+      }
+    }
+  },
+  "message": "Employee updated successfully."
+}
+```
+
+### Failure Responses:
+
+* **`400 Bad Request` — Inactive employee or validation rule violation:**
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Cannot update an inactive employee. Rehire the employee first to make changes.",
+    "error": "Bad Request"
+  }
+  ```
+  *Or duplicate employee ID:*
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Employee ID 'EMP-1002' is already in use.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`401 Unauthorized`:**
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+* **`403 Forbidden` — Calling user is not self, manager, or HR / Immutability rule broken:**
+  ```json
+  {
+    "statusCode": 403,
+    "message": "Only HR or admin can update employee records.",
+    "error": "Forbidden"
+  }
+  ```
+  *Or default bot agent mutation:*
+  ```json
+  {
+    "statusCode": 403,
+    "message": "Default agents are immutable and cannot be updated.",
+    "error": "Forbidden"
+  }
+  ```
+
+* **`404 Not Found`:**
+  ```json
+  {
+    "statusCode": 404,
+    "message": "Employee not found",
+    "error": "Not Found"
+  }
+  ```
+
+---
+
+## 6. PATCH `/employees-api/employees/{id}/personal-info` — Update Personal Information Section
+
+* **Method**: `PATCH`
+* **Full URL**: `http://api.stg.blazeup.ai/employees-api/employees/:id/personal-info`
+* **Controller**: [EmployeeProfileController.updatePersonalInfo](file:///e:/VS%20CODE/Blazeup/blazeup-microservice-employee/src/modules/employee/controllers/employee-profile.controller.ts#L65-L75)
+* **Access**: Self, reporting manager, or HR / admin. Triggers life-event notifications and denormalized manager-snapshot cascades if names/photo change.
+
+### Request Headers
+```http
+Content-Type: application/json
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Path Parameter:
+* **`:id`** *(Required)*: 24-character hexadecimal MongoDB ObjectId
+
+### Request Payload (`UpdatePersonalInfoDto`):
+All fields are optional partials of PersonalInfo:
+* `prefix`: `"MR"` | `"MS"` | `"MRS"` | `"DR"` | `"PROF"` | `"OTHER"`
+* `firstName`, `middleName`, `lastName`, `preferredName`, `legalFullName`: Strings
+* `suffix`: `"JR"` | `"SR"` | `"II"` | `"III"` | `"IV"` | `"ESQ"` | `"OTHER"`
+* `dob`: String `"YYYY-MM-DD"`
+* `gender`: `"MALE"` | `"FEMALE"` | `"NON_BINARY"` | `"PREFER_NOT_TO_SAY"`
+* `maritalStatus`: `"SINGLE"` | `"MARRIED"` | `"DIVORCED"` | `"WIDOWED"` | `"SEPARATED"` | `"PREFER_NOT_TO_SAY"`
+* `nationality`: String
+* `ethnicity`: Mongo ObjectId string
+* `bloodType`: `"A_POSITIVE"` | `"A_NEGATIVE"` | `"B_POSITIVE"` | `"B_NEGATIVE"` | `"AB_POSITIVE"` | `"AB_NEGATIVE"` | `"O_POSITIVE"` | `"O_NEGATIVE"` | `"UNKNOWN"`
+* `medicalNotes`: String
+* `photoUrl`: String
+* `photoUpdatedAt`: String `"YYYY-MM-DD"`
+* `contact`: Object (`personalEmail`, `workPhone`, `personalPhone`, `preferredContactMethod`)
+* `address`: Object (`isSameAsPermanent`, `permanent`, `current`)
+* `emergencyContacts`: Array of emergency contacts
+* `dependents`: Array of dependents
+* `ssn` *(String, optional)*: Automatically tokenized & routed to `tax.detail.ssn`
+* `linkedinId`: String
+* `socialProfiles`: Array of `{ platform, url }`
+* `workplaces`: Array of `{ _id, name }`
+* `w2ElectronicConsent`: Boolean
+* `paymentMethodPreference`: `"direct_deposit"` | `"manual"` | `""` (empty string clears)
+* `terminationDate`: String `"YYYY-MM-DD"`
+
+#### Example Request Payload:
+```json
+{
+  "preferredName": "Al",
+  "maritalStatus": "MARRIED",
+  "contact": {
+    "personalEmail": "alex.rivera.personal@gmail.com",
+    "personalPhone": {
+      "countryCode": "+1",
+      "number": "5551239876"
+    }
+  },
+  "linkedinId": "alex-rivera-dev"
+}
+```
+
+### Success Response (`200 OK`):
+```json
+{
+  "data": {
+    "_id": "66f01234567890abcdef1234",
+    "employeeId": "EMP-1001",
+    "personalInfo": {
+      "firstName": "Alex",
+      "lastName": "Rivera",
+      "preferredName": "Al",
+      "maritalStatus": "MARRIED",
+      "contact": {
+        "workEmail": "alex.rivera@example.com",
+        "personalEmail": "alex.rivera.personal@gmail.com",
+        "personalPhone": {
+          "countryCode": "+1",
+          "number": "5551239876"
+        }
+      },
+      "linkedinId": "alex-rivera-dev"
+    }
+  },
+  "message": "Personal info updated."
+}
+```
+
+### Failure Responses:
+
+* **`400 Bad Request` — Validation error or inactive record:**
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Cannot perform this action on an inactive employee.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`401 Unauthorized`:**
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+* **`403 Forbidden` — Caller not authorized to edit this employee's personal info:**
+  ```json
+  {
+    "statusCode": 403,
+    "message": "Not authorized to update this employee's personal info.",
+    "error": "Forbidden"
+  }
+  ```
+
+* **`404 Not Found`:**
+  ```json
+  {
+    "statusCode": 404,
+    "message": "Employee not found",
+    "error": "Not Found"
+  }
+  ```
+
+---
+
+## 7. PATCH `/employees-api/employees/{id}/avatar-visibility` — Self-Service Profile Picture Visibility Toggle
+
+* **Method**: `PATCH`
+* **Full URL**: `http://api.stg.blazeup.ai/employees-api/employees/:id/avatar-visibility`
+* **Controller**: [EmployeeProfileController.updateAvatarVisibility](file:///e:/VS%20CODE/Blazeup/blazeup-microservice-employee/src/modules/employee/controllers/employee-profile.controller.ts#L495-L508)
+* **Access**: Authenticated user. **Enforces self-ownership**: the URL parameter `:id` must match the caller's own employee ID from their JWT token.
+
+### Request Headers
+```http
+Content-Type: application/json
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Path Parameter:
+* **`:id`** *(Required)*: 24-character hexadecimal MongoDB ObjectId (must belong to the logged-in user)
+
+### Request Payload:
+* `show` *(Boolean, Required)*: `true` to display profile photo across directory / org chart, `false` to hide it.
+
+```json
+{
+  "show": true
+}
+```
+
+### Success Response (`200 OK`):
+```json
+{
+  "data": {
+    "isShowAvatar": true
+  },
+  "message": "Avatar visibility updated."
+}
+```
+
+### Failure Responses:
+
+* **`400 Bad Request` — Missing or non-boolean value:**
+  ```json
+  {
+    "statusCode": 400,
+    "message": "\"show\" must be a boolean.",
+    "error": "Bad Request"
+  }
+  ```
+  *Or if employee is inactive:*
+  ```json
+  {
+    "statusCode": 400,
+    "message": "Cannot perform this action on an inactive employee.",
+    "error": "Bad Request"
+  }
+  ```
+
+* **`401 Unauthorized`:**
+  ```json
+  {
+    "statusCode": 401,
+    "message": "Unauthorized"
+  }
+  ```
+
+* **`403 Forbidden` — Attempting to change someone else's avatar visibility:**
+  ```json
+  {
+    "statusCode": 403,
+    "message": "You can only update your own avatar visibility.",
+    "error": "Forbidden"
+  }
+  ```
+
+* **`404 Not Found`:**
+  ```json
+  {
+    "statusCode": 404,
+    "message": "Employee not found",
+    "error": "Not Found"
+  }
+  ```
+
+---
+
+###  Notes Regarding Initial Documentation
+
+2. **`GET /my-profile` routing**:
+   * Controller is mounted as `@Controller('employees/my-profile')` with `@Get()`, making the URL `GET /employees-api/employees/my-profile`. It does not accept or require any parameters or request body; it strictly parses the JWT payload.
+3. **`PATCH /avatar-visibility`**:
+   * Controller is mounted inside `EmployeeProfileController` (`@Controller('employees/:id')`) as `@Patch('avatar-visibility')`.
+   * The URL is `PATCH /employees-api/employees/:id/avatar-visibility`.
+   * Requires `{ "show": true | false }`.
+   * It specifically verifies `callerId === targetId` and throws `403 Forbidden` if attempting to change someone else's visibility.
+4. **`POST /employees` emergency contacts constraint**:
+   * When `emergencyContacts` array is sent, the code explicitly enforces that **exactly one contact has `"isPrimary": true`**. Sending zero or multiple primary contacts causes a `400 Bad Request`.
+5. **Partial PATCH vs Section PATCH**:
+   * `PATCH /employees-api/employees/:id` is a root record patch (`UpdateEmployeeDto`). When called by a regular employee (self), HR-managed fields (`employmentDetail`, `workMode`, `probation`, `status`, etc.) are stripped silently to allow personal edits without throwing an error.
+   * `PATCH /employees-api/employees/:id/personal-info` is dedicated to the personal-info section and triggers name/photo change cascades across reporting manager snapshots in MongoDB and life-event queues.

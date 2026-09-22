@@ -1,22 +1,37 @@
 import json
+import re
+import time
 from typing import Any, AsyncGenerator
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage
 from app.agent.graph import app_graph
-from app.models.api_models import ChatRequest, ApprovalRequest
+from app.models.api_models import ChatRequest
 from app.db.mongo import get_database, close_client
 from app.config import settings
 from app.core.swagger import (
     SWAGGER_APP_CONFIG,
     CHAT_STREAM_DOCS,
-    CHAT_APPROVE_DOCS,
     HEALTH_DOCS,
 )
 
+MONGO_ID_REGEX = re.compile(r"\b[0-9a-fA-F]{24}\b")
+MONGO_TABLE_ROW_REGEX = re.compile(r"^\s*\|?\s*(?:MongoDB\s*ID|_id|Mongo\s*ID)\s*\|.*$\n?", re.MULTILINE | re.IGNORECASE)
+MONGO_LABEL_REGEX = re.compile(r"(?:,\s*)?(?:\(?\s*MongoDB\s*(?:Object)?ID\s*:\s*[0-9a-fA-F]{24}\s*\)?)", re.IGNORECASE)
+
+def hide_mongo_ids(text: str) -> str:
+    """Strip or mask MongoDB ObjectIds and corresponding label text from assistant text."""
+    if not text:
+        return ""
+    cleaned = MONGO_TABLE_ROW_REGEX.sub("", text)
+    cleaned = MONGO_LABEL_REGEX.sub("", cleaned)
+    cleaned = MONGO_ID_REGEX.sub("", cleaned)
+    return cleaned
+
 def format_content(content: Any) -> str:
+    """Format diverse message content types into a unified text string."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -35,6 +50,7 @@ def format_content(content: Any) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage application lifecycle for MongoDB connections and resources."""
     db = get_database()
     try:
         await db.command("ping")
@@ -63,14 +79,105 @@ app.add_middleware(
 
 @app.get("/health", **HEALTH_DOCS)
 async def health_check() -> dict[str, str]:
+    """Return application operational health and active environment name."""
     return {"status": "ok", "env": settings.APP_ENV}
+
+@app.get("/api/chat/threads")
+async def get_chat_threads() -> list[dict[str, str]]:
+    """Retrieve distinct conversation threads sorted by recency with titles."""
+    try:
+        db = get_database()
+        pipeline = [
+            {"$group": {"_id": "$thread_id", "latest_checkpoint": {"$max": "$_id"}}},
+            {"$sort": {"latest_checkpoint": -1}},
+        ]
+        cursor = db["checkpoints"].aggregate(pipeline)
+        thread_ids = [
+            doc["_id"]
+            async for doc in cursor
+            if doc.get("_id") and isinstance(doc["_id"], str) and doc["_id"].strip()
+        ]
+        result = []
+        for thread_id in thread_ids:
+            title = "New Chat"
+            try:
+                state = await app_graph.aget_state({"configurable": {"thread_id": thread_id}})
+                state_values = getattr(state, "values", {}) or {}
+                messages = state_values.get("messages", [])
+                for msg in messages:
+                    msg_type = getattr(msg, "type", "")
+                    if msg_type in ("human", "user"):
+                        content = format_content(getattr(msg, "content", "")).strip()
+                        if content:
+                            if len(content) > 35:
+                                title = content[:35] + "..."
+                            else:
+                                title = content
+                        break
+            except Exception:
+                pass
+            result.append({"id": thread_id, "title": title})
+        return result
+    except Exception:
+        return []
+
+@app.get("/api/chat/history/{thread_id}")
+async def get_chat_history(thread_id: str) -> dict[str, Any]:
+    """Retrieve message history for a specific thread from MongoDB checkpoints."""
+    try:
+        config = {"configurable": {"thread_id": thread_id}}
+        state = await app_graph.aget_state(config)
+        state_values = getattr(state, "values", {}) or {}
+        raw_messages = state_values.get("messages", [])
+
+        formatted_messages = []
+        for idx, msg in enumerate(raw_messages):
+            msg_type = getattr(msg, "type", "")
+            if msg_type in ("human", "user"):
+                role = "user"
+            elif msg_type in ("ai", "assistant"):
+                role = "assistant"
+            elif msg_type == "tool":
+                role = "tool"
+            elif msg_type == "system":
+                role = "system"
+            else:
+                role = "assistant"
+
+            content = format_content(getattr(msg, "content", ""))
+            if role == "assistant":
+                content = hide_mongo_ids(content)
+
+            tool_calls = getattr(msg, "tool_calls", []) or []
+
+            item: dict[str, Any] = {
+                "id": getattr(msg, "id", None) or f"hist-{idx}-{thread_id}",
+                "role": role,
+                "content": content,
+                "name": getattr(msg, "name", ""),
+                "timestamp": idx,
+            }
+            if tool_calls:
+                item["toolCalls"] = tool_calls
+            if role == "tool":
+                item["node"] = "execute_tools"
+            elif role == "assistant":
+                item["node"] = "call_model"
+
+            formatted_messages.append(item)
+
+        return {"thread_id": thread_id, "messages": formatted_messages}
+    except Exception as exc:
+        return {"thread_id": thread_id, "messages": [], "error": str(exc)}
 
 @app.post("/api/chat/stream", **CHAT_STREAM_DOCS)
 async def chat_stream(request: ChatRequest) -> StreamingResponse:
+    """Stream agent reasoning steps, tool executions, and responses using SSE."""
     config = {"configurable": {"thread_id": request.thread_id}}
     input_data = {"messages": [HumanMessage(content=request.message)]}
 
     async def event_generator() -> AsyncGenerator[str, None]:
+        """Generate Server-Sent Events from agent execution stream."""
         try:
             async for step_chunk in app_graph.astream(input_data, config=config, stream_mode="updates"):
                 for node_name, node_output in step_chunk.items():
@@ -78,18 +185,17 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                     messages = node_output.get("messages", [])
                     if messages:
                         last_msg = messages[-1]
+                        msg_type = getattr(last_msg, "type", "message")
+                        content_str = format_content(getattr(last_msg, "content", ""))
+                        if msg_type in ("ai", "assistant"):
+                            content_str = hide_mongo_ids(content_str)
                         chunk["message"] = {
-                            "type": getattr(last_msg, "type", "message"),
-                            "content": format_content(getattr(last_msg, "content", "")),
+                            "id": getattr(last_msg, "id", None) or f"msg-{node_name}-{int(time.time() * 1000)}",
+                            "type": msg_type,
+                            "name": getattr(last_msg, "name", ""),
+                            "content": content_str,
                             "tool_calls": getattr(last_msg, "tool_calls", []),
                         }
-                    if "requires_approval" in node_output:
-                        chunk["requires_approval"] = node_output["requires_approval"]
-                    if "pending_action" in node_output:
-                        chunk["pending_action"] = node_output["pending_action"]
-                    if "clarification_count" in node_output:
-                        chunk["clarification_count"] = node_output["clarification_count"]
-
                     yield f"data: {json.dumps(chunk)}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
         except Exception as exc:
@@ -97,82 +203,6 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
     return StreamingResponse(
         event_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
-
-@app.post("/api/chat/approve", **CHAT_APPROVE_DOCS)
-async def chat_approve(request: ApprovalRequest) -> StreamingResponse:
-    config = {"configurable": {"thread_id": request.thread_id}}
-    current_state = await app_graph.aget_state(config)
-    state_values = getattr(current_state, "values", {}) or {}
-
-    pending_action = state_values.get("pending_action")
-    if not pending_action:
-        raise HTTPException(
-            status_code=400,
-            detail="No pending action requiring approval was found for the specified thread.",
-        )
-
-    async def approval_event_generator() -> AsyncGenerator[str, None]:
-        try:
-            if request.approved:
-                await app_graph.aupdate_state(
-                    config,
-                    {"requires_approval": False},
-                    as_node="check_hitl",
-                )
-                async for step_chunk in app_graph.astream(None, config=config, stream_mode="updates"):
-                    for node_name, node_output in step_chunk.items():
-                        chunk: dict[str, Any] = {"node": node_name}
-                        messages = node_output.get("messages", [])
-                        if messages:
-                            last_msg = messages[-1]
-                            chunk["message"] = {
-                                "type": getattr(last_msg, "type", "message"),
-                                "content": format_content(getattr(last_msg, "content", "")),
-                                "tool_calls": getattr(last_msg, "tool_calls", []),
-                            }
-                        if "requires_approval" in node_output:
-                            chunk["requires_approval"] = node_output["requires_approval"]
-                        if "pending_action" in node_output:
-                            chunk["pending_action"] = node_output["pending_action"]
-                        yield f"data: {json.dumps(chunk)}\n\n"
-                yield f"data: {json.dumps({'done': True})}\n\n"
-            else:
-                tool_name = pending_action.get("name", "operation")
-                tool_id = pending_action.get("id", "")
-                cancellation_message = ToolMessage(
-                    content=f"The operation '{tool_name}' was rejected and aborted by the supervisor.",
-                    name=tool_name,
-                    tool_call_id=tool_id,
-                )
-                await app_graph.aupdate_state(
-                    config,
-                    {
-                        "pending_action": None,
-                        "requires_approval": False,
-                        "messages": [cancellation_message],
-                    },
-                    as_node="execute_tools",
-                )
-                async for step_chunk in app_graph.astream(None, config=config, stream_mode="updates"):
-                    for node_name, node_output in step_chunk.items():
-                        chunk: dict[str, Any] = {"node": node_name}
-                        messages = node_output.get("messages", [])
-                        if messages:
-                            last_msg = messages[-1]
-                            chunk["message"] = {
-                                "type": getattr(last_msg, "type", "message"),
-                                "content": format_content(getattr(last_msg, "content", "")),
-                            }
-                        yield f"data: {json.dumps(chunk)}\n\n"
-                yield f"data: {json.dumps({'done': True})}\n\n"
-        except Exception as exc:
-            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
-
-    return StreamingResponse(
-        approval_event_generator(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )

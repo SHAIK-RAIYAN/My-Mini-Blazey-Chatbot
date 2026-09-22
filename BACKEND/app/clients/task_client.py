@@ -9,34 +9,63 @@ class TaskClient(BaseAPIClient):
 
     async def create_task(self, payload: dict) -> dict:
         task_data = dict(payload)
-        if not task_data.get("project"):
-            task_data["isPersonal"] = True
+        task_data["isPersonal"] = True
+        if "assignee" in task_data and "assignees" not in task_data:
+            val = task_data["assignee"]
+            if val:
+                task_data["assignees"] = [val] if not isinstance(val, list) else val
         return await self.post("/task", json=task_data)
 
     async def list_tasks(self, params: dict | None = None) -> dict:
         query_params = dict(params or {})
+
+        for singular in ("number", "taskNumber", "task_number"):
+            if singular in query_params:
+                val = query_params.pop(singular)
+                if "taskNumbers" not in query_params:
+                    query_params["taskNumbers"] = val
+
+        for singular in ("assignee", "assigned_to", "assignee_id"):
+            if singular in query_params:
+                val = query_params.pop(singular)
+                if "assignees" not in query_params:
+                    query_params["assignees"] = val
+
         if "Scope" not in query_params and "scope" not in query_params:
             query_params["Scope"] = "PERSONAL"
         elif "scope" in query_params:
             query_params["Scope"] = query_params.pop("scope")
 
+        if isinstance(query_params.get("taskNumbers"), list):
+            query_params["taskNumbers"] = ",".join(query_params["taskNumbers"])
+        if isinstance(query_params.get("assignees"), list):
+            query_params["assignees"] = ",".join(query_params["assignees"])
+
         if "flat" not in query_params:
             query_params["flat"] = "true"
-
-        for key in ("taskNumber", "task_number", "task_numbers", "taskId", "task_id", "id", "ids"):
-            if key in query_params:
-                query_params["taskNumbers"] = query_params.pop(key)
-                break
-
-        for key in ("assignee", "assigned_to"):
-            if key in query_params:
-                query_params["assignees"] = query_params.pop(key)
-                break
 
         return await self.get("/task", params=query_params)
 
     async def update_single_task(self, task_id: str, payload: dict) -> dict:
-        return await self.patch(f"/task/multiple?ids={task_id}", json=payload)
+        clean_payload = {k: v for k, v in payload.items() if k not in ("task_id", "id")}
+        clean_payload["ids"] = [task_id]
+        if "assignee" in clean_payload and "assignees" not in clean_payload:
+            val = clean_payload["assignee"]
+            if val:
+                clean_payload["assignees"] = [val] if not isinstance(val, list) else val
+            else:
+                clean_payload["assignees"] = []
+        return await self.patch("/task/multiple", json=clean_payload)
+
+    async def update_task_by_id(self, task_id: str, payload: dict) -> dict:
+        return await self.update_single_task(task_id, payload)
 
     async def bulk_update_tasks(self, payload: dict) -> dict:
-        return await self.patch("/task/multiple", json=payload)
+        clean_payload = dict(payload)
+        if "assignee" in clean_payload and "assignees" not in clean_payload:
+            val = clean_payload["assignee"]
+            if val:
+                clean_payload["assignees"] = [val] if not isinstance(val, list) else val
+            else:
+                clean_payload["assignees"] = []
+        return await self.patch("/task/multiple", json=clean_payload)

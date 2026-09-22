@@ -6,7 +6,6 @@ class Settings(BaseSettings):
     PORT: int = 8000
     HOST: str = "0.0.0.0"
     GOOGLE_API_KEY: str = ""
-    TAVILY_API_KEY: str = ""
     JWT_TOKEN: str = ""
     PROJECT_API_BASE_URL: str = "http://api.stg.blazeup.ai/project-api"
     EMPLOYEE_API_BASE_URL: str = "http://api.stg.blazeup.ai/employees-api"

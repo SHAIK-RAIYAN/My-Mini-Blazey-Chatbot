@@ -11,19 +11,20 @@ class CreateTaskArgs(BaseModel):
 class ListTasksArgs(BaseModel):
     taskNumbers: list[str] | None = Field(default=None, description="List of task numbers to filter by")
     assignees: list[str] | None = Field(default=None, description="List of assignee IDs or emails to filter by")
+    Scope: str | None = Field(default="PERSONAL", description="Task scope: PERSONAL, EMPLOYEE, or PROJECT")
     page: int | None = Field(default=1, description="Page number for pagination")
     limit: int | None = Field(default=20, description="Maximum number of tasks to return")
     status: str | None = Field(default=None, description="Filter tasks by status")
 
 class UpdateTaskArgs(BaseModel):
-    task_id: str = Field(..., description="Unique ID of the task to update")
+    mongo_object_id: str = Field(..., description="Must be the 24-character hex MongoDB _id, NOT the human-readable taskNumber or id")
     status: str | None = Field(default=None, description="New status for the task")
     priority: str | None = Field(default=None, description="New priority level for the task")
     assignee: str | None = Field(default=None, description="New assignee ID or email")
     dueDate: str | None = Field(default=None, description="New due date in ISO format")
 
 class BulkUpdateTasksArgs(BaseModel):
-    ids: list[str] = Field(..., description="List of task IDs to update")
+    ids: list[str] = Field(..., description="Must be a list of 24-character hex MongoDB _ids, NOT human-readable taskNumbers")
     status: str | None = Field(default=None, description="New status for the tasks")
     priority: str | None = Field(default=None, description="New priority level for the tasks")
     assignee: str | None = Field(default=None, description="New assignee for the tasks")

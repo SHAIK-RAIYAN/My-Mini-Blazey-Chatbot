@@ -9,11 +9,8 @@ from app.tools.employee_tools import (
     search_employees,
     create_employee,
     update_employee_record,
+    update_employee_personal_info,
 )
-from app.tools.web_tools import (
-    tavily_search,
-)
-
 __all__ = [
     "create_personal_task",
     "list_tasks",
@@ -23,5 +20,5 @@ __all__ = [
     "search_employees",
     "create_employee",
     "update_employee_record",
-    "tavily_search",
+    "update_employee_personal_info",
 ]

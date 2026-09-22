@@ -1,41 +1,110 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
-
-export interface PendingAction {
-  name: string
-  args: Record<string, unknown>
-  id?: string
-}
+import { useState, useCallback, useRef, useEffect } from "react"
 
 export interface ChatMessage {
   id: string
   role: "user" | "assistant" | "tool" | "system"
   content: string
+  name?: string
   node?: string
   toolCalls?: Array<{
     name: string
     args: Record<string, unknown>
     id?: string
   }>
-  pendingAction?: PendingAction | null
-  requiresApproval?: boolean
   timestamp: number
 }
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
 
+export interface ThreadItem {
+  id: string
+  title: string
+}
+
+let initialThreadsLoaded = false
+
 export function useAgentChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [threads, setThreads] = useState<ThreadItem[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [pendingApproval, setPendingApproval] = useState(false)
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
-  const [threadId, setThreadId] = useState<string>(
-    () => `thread-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-  )
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [threadId, setThreadId] = useState<string>("")
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const isFetchingThreadsRef = useRef(false)
+
+  useEffect(() => {
+    setThreadId(`thread-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+  }, [])
+
+  const fetchThreads = useCallback(async () => {
+    if (isFetchingThreadsRef.current) return
+    isFetchingThreadsRef.current = true
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/chat/threads`)
+      if (res.ok) {
+        const data = await res.json()
+        const rawList = Array.isArray(data) ? data : data.threads || []
+        const normalized: ThreadItem[] = rawList.map((item: any) => {
+          if (typeof item === "string") {
+            return { id: item, title: "New Chat" }
+          }
+          return {
+            id: item.id || "",
+            title: item.title && item.title !== "Empty Session" ? item.title : "New Chat",
+          }
+        })
+        setThreads(normalized)
+      }
+    } catch {} finally {
+      isFetchingThreadsRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (initialThreadsLoaded) return
+    initialThreadsLoaded = true
+    fetchThreads()
+  }, [fetchThreads])
+
+  const selectThread = useCallback(async (selectedId: string) => {
+    if (!selectedId || (selectedId === threadId && messages.length > 0)) return
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    setIsLoading(true)
+    setIsAnalyzing(false)
+    setThreadId(selectedId)
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/chat/history/${encodeURIComponent(selectedId)}`)
+      if (res.ok) {
+        const data = await res.json()
+        const historyMsgs = data.messages || []
+        setMessages(historyMsgs)
+      } else {
+        setMessages([])
+      }
+    } catch {
+      setMessages([])
+    } finally {
+      setIsLoading(false)
+    }
+  }, [threadId, messages.length])
+
+  const createNewChat = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    setMessages([])
+    setInput("")
+    setIsLoading(false)
+    setIsAnalyzing(false)
+    setThreadId(`thread-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+  }, [])
 
   const processSSE = useCallback(async (response: Response, currentAssistantId: string) => {
     if (!response.body) return
@@ -75,14 +144,8 @@ export function useAgentChat() {
                 },
               ])
               setIsLoading(false)
+              setIsAnalyzing(false)
               continue
-            }
-
-            if (data.requires_approval) {
-              setPendingApproval(true)
-              if (data.pending_action) {
-                setPendingAction(data.pending_action)
-              }
             }
 
             if (data.node === "call_model" && data.message) {
@@ -99,10 +162,17 @@ export function useAgentChat() {
               }
               const toolCalls = data.message.tool_calls || []
 
-              setMessages((prev) => {
-                const isAfterTool = prev.length > 0 && prev.some((m) => m.role === "tool")
-                const targetId = isAfterTool ? `${currentAssistantId}-final` : currentAssistantId
+              if (msgContent.trim() !== "" || toolCalls.length > 0) {
+                setIsAnalyzing(false)
+              }
 
+              const targetId =
+                data.message.id ||
+                (toolCalls.length > 0
+                  ? `${currentAssistantId}-tools`
+                  : `${currentAssistantId}-response`)
+
+              setMessages((prev) => {
                 const existingIndex = prev.findIndex((m) => m.id === targetId)
                 if (existingIndex >= 0) {
                   const updated = [...prev]
@@ -131,40 +201,90 @@ export function useAgentChat() {
             }
 
             if (data.node === "execute_tools" && data.message) {
+              setIsAnalyzing(false)
               const rawResult = data.message.content
               const toolResult = typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult)
+              const toolMsgId =
+                data.message.id ||
+                `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
               if (toolResult) {
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    id: `tool-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                    role: "tool",
-                    content: toolResult,
-                    node: "execute_tools",
-                    timestamp: Date.now(),
-                  },
-                ])
+                setMessages((prev) => {
+                  const existingIdx = prev.findIndex((m) => m.id === toolMsgId)
+                  if (existingIdx >= 0) {
+                    const updated = [...prev]
+                    updated[existingIdx] = {
+                      ...updated[existingIdx],
+                      content: toolResult,
+                      name: data.message?.name || updated[existingIdx].name,
+                    }
+                    return updated
+                  }
+                  return [
+                    ...prev,
+                    {
+                      id: toolMsgId,
+                      role: "tool",
+                      name:
+                        data.message?.name ||
+                        (data.message?.tool_calls && data.message.tool_calls[0]?.name) ||
+                        "",
+                      content: toolResult,
+                      node: "execute_tools",
+                      timestamp: Date.now(),
+                    },
+                  ]
+                })
               }
             }
 
             if (data.done) {
               setIsLoading(false)
+              setIsAnalyzing(false)
+              setMessages((prev) =>
+                prev.filter(
+                  (m) =>
+                    m.role === "tool" ||
+                    m.role === "system" ||
+                    m.content.trim() !== "" ||
+                    (m.toolCalls && m.toolCalls.length > 0)
+                )
+              )
+              fetchThreads()
+              try {
+                await reader.cancel()
+              } catch {}
+              break
             }
           } catch {}
         }
       }
     } finally {
       setIsLoading(false)
+      setIsAnalyzing(false)
     }
-  }, [])
+  }, [fetchThreads])
 
   const sendMessage = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText !== undefined ? overrideText : input).trim()
-      if (!text || isLoading || pendingApproval) return
+      if (!text || isLoading) return
+
+      const activeThreadId = threadId || `thread-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      if (!threadId) {
+        setThreadId(activeThreadId)
+      }
+
+      const displayTitle = text.length > 35 ? `${text.slice(0, 35)}...` : text
+      setThreads((prev) => {
+        const existing = prev.find((t) => t.id === activeThreadId)
+        const titleToUse = existing?.title && existing.title !== "New Chat" ? existing.title : displayTitle
+        const remaining = prev.filter((t) => t.id !== activeThreadId)
+        return [{ id: activeThreadId, title: titleToUse }, ...remaining]
+      })
 
       setInput("")
       setIsLoading(true)
+      setIsAnalyzing(true)
 
       const userMsgId = `user-${Date.now()}`
       const assistantMsgId = `assistant-${Date.now()}`
@@ -186,7 +306,7 @@ export function useAgentChat() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            thread_id: threadId,
+            thread_id: activeThreadId,
             message: text,
           }),
           signal: abortControllerRef.current.signal,
@@ -204,6 +324,7 @@ export function useAgentChat() {
             },
           ])
           setIsLoading(false)
+          setIsAnalyzing(false)
           return
         }
 
@@ -211,6 +332,7 @@ export function useAgentChat() {
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") {
           setIsLoading(false)
+          setIsAnalyzing(false)
           return
         }
         setMessages((prev) => [
@@ -223,107 +345,35 @@ export function useAgentChat() {
           },
         ])
         setIsLoading(false)
+        setIsAnalyzing(false)
       }
     },
-    [input, isLoading, pendingApproval, threadId, processSSE]
+    [input, isLoading, threadId, processSSE]
   )
 
-  const handleApproval = useCallback(
-    async (approved: boolean) => {
-      if (!pendingApproval || isLoading) return
-
-      setIsLoading(true)
-      setPendingApproval(false)
-
-      const approvalStatusMsgId = `approval-${Date.now()}`
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: approvalStatusMsgId,
-          role: "system",
-          content: approved
-            ? `Action approved by supervisor. Executing: ${pendingAction?.name || "Operation"}`
-            : `Action rejected by supervisor. Cancelling: ${pendingAction?.name || "Operation"}`,
-          timestamp: Date.now(),
-        },
-      ])
-
-      const nextAssistantId = `assistant-post-approval-${Date.now()}`
-
-      try {
-        abortControllerRef.current = new AbortController()
-        const response = await fetch(`${BACKEND_URL}/api/chat/approve`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            thread_id: threadId,
-            approved,
-          }),
-          signal: abortControllerRef.current.signal,
-        })
-
-        setPendingAction(null)
-
-        if (!response.ok) {
-          const errText = await response.text()
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `err-${Date.now()}`,
-              role: "assistant",
-              content: `Approval request failed (${response.status}): ${errText}`,
-              timestamp: Date.now(),
-            },
-          ])
-          setIsLoading(false)
-          return
-        }
-
-        await processSSE(response, nextAssistantId)
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === "AbortError") {
-          setIsLoading(false)
-          return
-        }
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `err-${Date.now()}`,
-            role: "assistant",
-            content: `Failed to submit approval to backend`,
-            timestamp: Date.now(),
-          },
-        ])
-        setIsLoading(false)
-      }
-    },
-    [pendingApproval, isLoading, pendingAction, threadId, processSSE]
-  )
-
-  const resetChat = useCallback(() => {
+  const stopGeneration = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
+      abortControllerRef.current = null
     }
-    setMessages([])
-    setInput("")
     setIsLoading(false)
-    setPendingApproval(false)
-    setPendingAction(null)
-    setThreadId(`thread-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+    setIsAnalyzing(false)
   }, [])
 
   return {
     messages,
+    threads,
     input,
     setInput,
     isLoading,
-    pendingApproval,
-    pendingAction,
+    isAnalyzing,
     threadId,
+    setThreadId,
     sendMessage,
-    handleApproval,
-    resetChat,
+    stopGeneration,
+    resetChat: createNewChat,
+    createNewChat,
+    selectThread,
+    fetchThreads,
   }
 }

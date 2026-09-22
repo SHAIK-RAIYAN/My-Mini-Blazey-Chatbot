@@ -3,7 +3,7 @@ from typing import Any
 OPENAPI_TAGS: list[dict[str, Any]] = [
     {
         "name": "Agent",
-        "description": "Agentic Chatbot operations including streaming interactions and human-in-the-loop (HITL) approval workflows.",
+        "description": "Agentic Chatbot operations including streaming interactions.",
     },
     {
         "name": "System",
@@ -23,15 +23,8 @@ SWAGGER_APP_CONFIG: dict[str, Any] = {
 CHAT_STREAM_DOCS: dict[str, Any] = {
     "summary": "Stream Agent Chat",
     "tags": ["Agent"],
-    "description": "Accepts a thread ID and message, and returns an SSE stream detailing execution steps, tool invocations, and supervisor approval requests.",
+    "description": "Accepts a thread ID and message, and returns an SSE stream detailing execution steps and tool invocations.",
     "response_description": "Server-Sent Events stream yielding JSON message updates and execution checkpoints.",
-}
-
-CHAT_APPROVE_DOCS: dict[str, Any] = {
-    "summary": "Approve or Reject Pending Action",
-    "tags": ["Agent"],
-    "description": "Human-in-the-Loop (HITL) webhook endpoint. Evaluates supervisor approval for a pending mutating action. If approved, clears approval flags and streams the tool execution and final model response. If rejected, aborts the pending action and notifies the user.",
-    "response_description": "Server-Sent Events stream yielding post-approval tool execution and final response.",
 }
 
 HEALTH_DOCS: dict[str, Any] = {
