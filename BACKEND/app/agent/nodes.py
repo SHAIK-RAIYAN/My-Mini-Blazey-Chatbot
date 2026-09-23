@@ -3,7 +3,6 @@ import json
 from typing import Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.callbacks import FileCallbackHandler
 from langchain_core.messages import SystemMessage, ToolMessage, AIMessage
 from app.config import settings
 from app.agent.state import AgentState
@@ -49,7 +48,6 @@ tool_map = {tool.name: tool for tool in tools}
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite",
     google_api_key=settings.GOOGLE_API_KEY if settings.GOOGLE_API_KEY else "AIzaSyDummyKeyForInitializationPlaceholder",
-    callbacks=[FileCallbackHandler("langchain_traces.log")],
 )
 model_with_tools = llm.bind_tools(tools)
 
@@ -75,7 +73,6 @@ async def invoke_model_with_retry(messages: list[Any]) -> Any:
     return await model_with_tools.ainvoke(messages)
 
 async def call_model(state: AgentState) -> dict[str, Any]:
-    logger.info("\n\n" + "="*60 + "\n[LANGGRAPH NODE: call_model] NEW INTERACTION CYCLE STARTED\n" + "="*60 + "\n")
     await asyncio.sleep(2)
     messages = state.get("messages", [])
     prompt_messages: list[Any] = [SystemMessage(content=SYSTEM_PROMPT)]
@@ -83,14 +80,6 @@ async def call_model(state: AgentState) -> dict[str, Any]:
         if not isinstance(message, SystemMessage):
             prompt_messages.append(message)
 
-    history_summary = []
-    for m in prompt_messages:
-        m_type = getattr(m, "type", m.__class__.__name__)
-        m_content = str(getattr(m, "content", ""))[:200]
-        history_summary.append(f"  - [{m_type}]: {m_content}")
-    logger.info("Current Messages for Model reasoning:\n" + "\n".join(history_summary) + "\n")
-
-    logger.info("Invoking Gemini Model with registered tools: " + ", ".join(tool_map.keys()) + "...")
     try:
         response = await invoke_model_with_retry(prompt_messages)
     except Exception as exc:
@@ -106,12 +95,9 @@ async def call_model(state: AgentState) -> dict[str, Any]:
         raise
 
     if getattr(response, "tool_calls", None):
-        calls_detail = []
         for t in response.tool_calls:
-            calls_detail.append(f"  - Tool: {t['name']}\n    Args: {json.dumps(t.get('args', {}), indent=2)}")
-        logger.info("\n" + "*"*50 + "\nLLM DETERMINED TOOL CALLS REQUIRED:\n" + "\n".join(calls_detail) + "\n" + "*"*50 + "\n")
-    else:
-        logger.info("\n" + "*"*50 + f"\nLLM GENERATED RESPONSE (NO TOOL CALLS):\nContent: {response.content}\n" + "*"*50 + "\n")
+            args_str = json.dumps(t.get("args", {}))
+            logger.info(f"\nTool Dispatched: {t['name']} | Args: {args_str}\n")
 
     clarification_count = state.get("clarification_count", 0)
 
@@ -134,7 +120,6 @@ async def call_model(state: AgentState) -> dict[str, Any]:
 def should_continue(state: AgentState) -> str:
     messages = state.get("messages", [])
     if not messages:
-        logger.info("\n[LANGGRAPH ROUTER: should_continue] No messages -> end\n")
         return "end"
     last_message = messages[-1]
     if getattr(last_message, "tool_calls", None):
@@ -146,15 +131,12 @@ def should_continue(state: AgentState) -> str:
                     content="Execution stopped: Maximum tool execution limit (5 loops) reached to prevent quota exhaustion."
                 )
             )
-            logger.info("\n[LANGGRAPH ROUTER: should_continue] Exceeded loop limit (5) -> end\n")
+            logger.warning("Maximum tool execution limit (5 loops) reached.")
             return "end"
-        logger.info(f"\n[LANGGRAPH ROUTER: should_continue] Found tool calls (loop {loop_count}) -> tools\n")
         return "tools"
-    logger.info("\n[LANGGRAPH ROUTER: should_continue] No tool calls -> end\n")
     return "end"
 
 async def execute_tools(state: AgentState) -> dict[str, Any]:
-    logger.info("\n\n" + "="*60 + "\n[LANGGRAPH NODE: execute_tools] EXECUTING TOOLS\n" + "="*60 + "\n")
     messages = state.get("messages", [])
     if not messages:
         return {"messages": []}
@@ -171,16 +153,18 @@ async def execute_tools(state: AgentState) -> dict[str, Any]:
 
         if target_tool is not None:
             try:
-                args_str = json.dumps(tool_args, indent=2) if isinstance(tool_args, dict) else str(tool_args)
-                logger.info(f"\n" + "-"*40 + f"\nTOOL EXECUTION INITIATED: {tool_name}\nArguments:\n{args_str}\n" + "-"*40 + "\n")
+                args_str = json.dumps(tool_args) if isinstance(tool_args, dict) else str(tool_args)
+                logger.info(f"\n{'='*50}\nTOOL EXECUTION: {tool_name}\nArguments: {args_str}\n{'='*50}\n")
                 result = await target_tool.ainvoke(tool_args)
-                logger.info(f"\n" + "-"*40 + f"\nTOOL EXECUTION SUCCESS: {tool_name}\nOutput:\n{str(result)[:1000]}\n" + "-"*40 + "\n")
+                res_str = str(result)
+                res_preview = res_str[:300] + "..." if len(res_str) > 300 else res_str
+                logger.info(f"\n{'='*50}\nTOOL COMPLETED: {tool_name}\nOutput: {res_preview}\n{'='*50}\n")
             except Exception as exc:
                 result = {"error": str(exc)}
-                logger.error(f"\n" + "!"*40 + f"\nTOOL EXECUTION FAILED: {tool_name}\nError: {exc}\n" + "!"*40 + "\n")
+                logger.error(f"\n{'!'*50}\nTOOL FAILED: {tool_name}\nError: {exc}\n{'!'*50}\n")
         else:
             result = {"error": f"Tool '{tool_name}' not recognized"}
-            logger.error(f"\n" + "!"*40 + f"\nTOOL NOT FOUND: {tool_name}\n" + "!"*40 + "\n")
+            logger.error(f"\n{'!'*50}\nTOOL NOT RECOGNIZED: {tool_name}\n{'!'*50}\n")
 
         tool_messages.append(
             ToolMessage(

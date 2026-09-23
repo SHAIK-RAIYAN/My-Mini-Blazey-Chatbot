@@ -136,3 +136,16 @@
   background-color: #2563eb !important;
   color: #ffffff !important;
 }
+
+.no-scrollbar::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.no-scrollbar,
+.overflow-y-auto {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

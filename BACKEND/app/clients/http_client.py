@@ -86,8 +86,8 @@ class BaseAPIClient:
         headers: dict[str, str] | None = None,
         **kwargs,
     ) -> httpx.Response:
-        payload_str = json.dumps(json_data, indent=2) if isinstance(json_data, (dict, list)) else str(json_data)
-        logger.info(f"\n" + "-"*50 + f"\nHTTP REQUEST DISPATCHED\nMethod: {method}\nURL: {url}\nParams: {params}\nPayload:\n{payload_str}\n" + "-"*50 + "\n")
+        payload_str = json.dumps(json_data) if isinstance(json_data, (dict, list)) else (str(json_data) if json_data is not None else "None")
+        logger.info(f"\n{'-'*40}\nHTTP REQUEST: {method} {url}\nParams: {params}\nPayload: {payload_str}\n")
         response = await self.client.request(
             method=method,
             url=url,
@@ -96,8 +96,8 @@ class BaseAPIClient:
             headers=headers,
             **kwargs,
         )
-        body_snippet = response.text[:1000] if response.text else ""
-        logger.info(f"\n" + "-"*50 + f"\nHTTP RESPONSE RECEIVED\nStatus: {response.status_code}\nURL: {url}\nBody:\n{body_snippet}\n" + "-"*50 + "\n")
+        body_snippet = response.text[:800] if response.text else ""
+        logger.info(f"\nHTTP RESPONSE: [{response.status_code}] {url}\nBody: {body_snippet}\n{'-'*40}\n")
         if response.status_code == 503:
             raise httpx.HTTPStatusError("503 Service Unavailable", request=response.request, response=response)
         return response
@@ -128,7 +128,7 @@ class BaseAPIClient:
                 **kwargs,
             )
         except (httpx.ReadError, httpx.ConnectError, httpx.RequestError, httpx.HTTPStatusError) as exc:
-            logger.error(f"\n" + "!"*50 + f"\nHTTP Error during API call to {url}: {exc}\n" + "!"*50 + "\n")
+            logger.error(f"\n{'!'*40}\nHTTP ERROR: {url} | Exception: {exc}\n{'!'*40}\n")
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code != 503:
                 try:
                     self._handle_error_response(exc.response)
@@ -167,7 +167,7 @@ class BaseAPIClient:
             try:
                 self._handle_error_response(response)
             except APIException as exc:
-                logger.error(f"\n" + "!"*50 + f"\nAPI Error Response from {url} [Status {response.status_code}]: {exc}\n" + "!"*50 + "\n")
+                logger.error(f"\n{'!'*40}\nHTTP ERROR RESPONSE: [{response.status_code}] {url}\nError: {exc}\nBody: {response.text}\n{'!'*40}\n")
                 if exc.status_code == 503:
                     return fallback_json
                 err_dict = {

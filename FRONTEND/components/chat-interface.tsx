@@ -21,7 +21,9 @@ import {
   CheckCircle2,
   AlertCircle,
   HelpCircle,
+  Check,
 } from "lucide-react"
+import { CopyIcon } from "@/components/ui/copy"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
@@ -317,6 +319,45 @@ export function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isLoading, isAnalyzing])
 
+  const [copiedId, setCopiedId] = React.useState<string | null>(null)
+
+  const handleCopy = React.useCallback((id: string, text: string) => {
+    if (!text) return
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => {
+      setCopiedId((curr) => (curr === id ? null : curr))
+    }, 2000)
+  }, [])
+
+  React.useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return
+      const target = e.target as HTMLElement | null
+      if (target) {
+        const tagName = target.tagName?.toLowerCase()
+        if (tagName === "input" || tagName === "textarea" || target.isContentEditable) {
+          return
+        }
+      }
+      if (e.key.length === 1) {
+        if (textareaRef.current && document.activeElement !== textareaRef.current) {
+          e.preventDefault()
+          textareaRef.current.focus()
+          setInput((prev) => prev + e.key)
+          setTimeout(() => {
+            if (textareaRef.current) {
+              const len = textareaRef.current.value.length
+              textareaRef.current.setSelectionRange(len, len)
+            }
+          }, 0)
+        }
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown)
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown)
+  }, [setInput])
+
   const toggleSidebar = () => {
     setIsSidebarOpen((prev) => !prev)
   }
@@ -397,7 +438,7 @@ export function ChatInterface() {
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 py-1 min-h-0">
+      <div className="flex-1 overflow-y-auto px-2 py-1 min-h-0 no-scrollbar">
         <div className="flex flex-col gap-1 pr-2">
           {threads.length === 0 ? (
             <div className="text-center py-8 text-xs text-muted-foreground font-mono">
@@ -512,7 +553,7 @@ export function ChatInterface() {
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 min-h-0">
+        <div className="flex-1 overflow-y-auto p-4 min-h-0 no-scrollbar">
           <div className="flex flex-col gap-4 py-2">
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-4 py-8">
@@ -587,7 +628,22 @@ export function ChatInterface() {
                     )}
 
                     {msg.role === "user" ? (
-                      <div className="flex items-end gap-2 max-w-[85%] sm:max-w-[75%]">
+                      <div className="group relative flex items-end gap-2 max-w-[85%] sm:max-w-[75%]">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(msg.id, msg.content)}
+                          className={`transition-all p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground shrink-0 mb-1 cursor-pointer ${
+                            copiedId === msg.id ? "opacity-100 text-green-500" : "opacity-70 sm:opacity-0 sm:group-hover:opacity-100"
+                          }`}
+                          title={copiedId === msg.id ? "Copied!" : "Copy message"}
+                          aria-label="Copy message"
+                        >
+                          {copiedId === msg.id ? (
+                            <Check className="size-3.5 text-green-500" />
+                          ) : (
+                            <CopyIcon size={14} className="size-3.5" />
+                          )}
+                        </button>
                         <Card
                           size="sm"
                           className="rounded-2xl rounded-tr-xs border-0 bg-foreground text-background shadow-xs"
@@ -616,7 +672,7 @@ export function ChatInterface() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col gap-2 max-w-[90%] sm:max-w-[80%] w-full">
+                      <div className="group relative flex flex-col gap-2 max-w-[90%] sm:max-w-[80%] w-full">
                         {msg.content ? (
                           (() => {
                             const parsed = parseAgentJson(msg.content)
@@ -692,6 +748,32 @@ export function ChatInterface() {
                           </Card>
                         ) : null}
 
+                        {msg.content && (
+                          <div className="flex items-center gap-1.5 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(msg.id, sanitizeAssistantContent(msg.content))}
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono transition-all text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer ${
+                                copiedId === msg.id ? "text-green-500 opacity-100 font-semibold" : "opacity-70 sm:opacity-0 sm:group-hover:opacity-100"
+                              }`}
+                              title={copiedId === msg.id ? "Copied!" : "Copy response"}
+                              aria-label="Copy response"
+                            >
+                              {copiedId === msg.id ? (
+                                <>
+                                  <Check className="size-3 text-green-500" />
+                                  <span>Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CopyIcon size={12} className="size-3" />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
                         {msg.toolCalls && msg.toolCalls.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 pt-1">
                             {msg.toolCalls.map((tc, tcIdx) => (
@@ -736,7 +818,7 @@ export function ChatInterface() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="w-full min-h-[44px] max-h-[160px] py-2.5 pl-4 pr-12 rounded-xl bg-card border border-border text-sm shadow-xs outline-none focus-visible:ring-1 focus-visible:ring-foreground resize-none overflow-y-auto leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full min-h-[44px] max-h-[160px] py-2.5 pl-4 pr-12 rounded-xl bg-card border border-border text-sm shadow-xs outline-none focus-visible:ring-1 focus-visible:ring-foreground resize-none overflow-y-auto no-scrollbar leading-relaxed disabled:opacity-50 disabled:cursor-not-allowed"
             />
             {isLoading ? (
               <Button

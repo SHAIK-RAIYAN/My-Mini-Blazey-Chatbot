@@ -62,22 +62,29 @@ async def create_employee(
     firstName: str,
     lastName: str,
     workEmail: str,
+    jobTitle: str | None = "Software Engineer",
     employmentType: str | None = "REGULAR",
-    employmentBasisId: str | None = "6a761828514350d27df5b501",
     hireDate: str | None = None,
-    departmentId: str | None = "66425e9f8ab88ca5ceb01a84",
 ) -> str:
     try:
+        clean_email = workEmail.strip()
         payload: dict[str, Any] = {
             "employmentType": employmentType or "REGULAR",
-            "employmentBasis": {"_id": employmentBasisId or "6a761828514350d27df5b501", "name": "Full Time"},
+            "employmentBasis": {"_id": "6a761828514350d27df5b501", "name": "Full Time"},
             "hireDate": hireDate or "2026-10-01",
             "personalInfo": {
-                "firstName": firstName,
-                "lastName": lastName,
+                "firstName": firstName.strip(),
+                "lastName": lastName.strip(),
                 "dob": "1995-01-01",
                 "gender": "PREFER_NOT_TO_SAY",
-                "contact": {"workEmail": workEmail},
+                "contact": {"workEmail": clean_email},
+                "address": {
+                    "country": "India",
+                    "state": "Karnataka",
+                    "city": "Bangalore",
+                    "pinCode": "560100",
+                    "addressLine1": "Tech Park Road",
+                },
                 "emergencyContacts": [
                     {
                         "name": "Primary Contact",
@@ -88,7 +95,18 @@ async def create_employee(
                 ],
             },
             "employmentDetail": {
-                "department": {"_id": departmentId or "66425e9f8ab88ca5ceb01a84"},
+                "legalEntity": {"_id": "6a78591df14cec0c9d6156f4", "name": "Blazeup India"},
+                "department": {
+                    "_id": "6a7621c9514350d27df5c044",
+                    "name": "Engineering",
+                    "departmentId": "3",
+                },
+                "jobTitle": {"name": jobTitle or "Software Engineer"},
+                "campus": {
+                    "_id": "6a7aaed46ea967e1343db1ee",
+                    "name": "Bangalore Tech Park",
+                },
+                "workMode": "REMOTE",
             },
         }
         result = await employee_client.create_employee(payload)

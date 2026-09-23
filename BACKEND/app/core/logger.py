@@ -1,4 +1,3 @@
-import os
 import sys
 import logging
 
@@ -22,9 +21,4 @@ def get_logger() -> logging.Logger:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(formatter)
             _logger.addHandler(console_handler)
-            backend_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            log_file = os.path.join(backend_root, "agent_production.log")
-            file_handler = logging.FileHandler(log_file, encoding="utf-8")
-            file_handler.setFormatter(formatter)
-            _logger.addHandler(file_handler)
     return _logger

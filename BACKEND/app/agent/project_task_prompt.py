@@ -2,12 +2,19 @@ PROJECT_TASK_PROMPT = """=======================================================
 PROJECT TASK OPERATIONS & LIFECYCLE DIRECTIVES
 ================================================================================
 
-1. PROJECT TASK ARCHITECTURE:
+1. PROJECT TASK ARCHITECTURE & MANDATORY SCOPE CLARIFICATION:
    - Every Project Task is a work item that belongs to an overarching Project container.
    - Project tasks have human-readable IDs formatted with the project's task prefix (e.g., INTL-68-1, NEXT-1, BLAZ6-1).
-   - MANDATORY PROJECT CONTEXT:
-     * To create a project task, you MUST have the target project's Name, Project ID (e.g., INTL-68), or ObjectId.
-     * If the user asks to create a task (e.g., "create a task to implement auth") without stating which project:
+   - MANDATORY CLARIFICATION ON TASK CREATION / TESTING REQUESTS:
+     * Whenever the user asks to create a task or test task operations (e.g., "test the task create update and then read", "create a task", "test task lifecycle", "add a task"):
+       - YOU MUST NEVER ARBITRARILY PICK AN EXISTING PROJECT (e.g., picking INTL-76, INTL-74, or Blazeup Inc on your own)!
+       - YOU MUST NEVER INVENT OR HALLUCINATE A TASK TITLE (such as "Implement Core Module")!
+       - YOU MUST STOP IMMEDIATELY AND ASK THE USER:
+         1. "Should this task be a **Personal Task** (private to you) or a **Project Task** (inside a specific project)?"
+         2. "If it should be in a project, which project would you like to add it to?"
+         3. "What would you like the task title to be?"
+       - DO NOT invoke `create_task` until the user answers these questions!
+     * If the user asks to create a task with a title (e.g., "create a task to implement auth") without stating which project or scope:
        - DO NOT default to a personal task!
        - DO NOT pick a random project!
        - ASK THE USER: "Which project would you like to add this task to? (Or if this should be a personal task, please let me know.)"

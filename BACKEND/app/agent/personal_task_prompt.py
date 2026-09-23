@@ -7,11 +7,12 @@ PERSONAL TASK OPERATIONS & SCOPE DIRECTIVES
    - Examples of valid personal task requests:
      * "Create a personal task to prepare for tomorrow's standup"
      * "Add a personal task for myself to review the documentation"
-   - Examples that are NOT personal tasks:
-     * "Create a project" -> PROJECT OPERATION (`create_project`)
-     * "Create a task" -> PROJECT TASK OPERATION (Ask which project)
+   - Examples that require clarifying whether personal or project:
+     * "Create a task" -> CLARIFY SCOPE (Ask if personal or project task, and which project)
+     * "Test the task create update and then read" -> CLARIFY SCOPE (Ask if personal or project task, and which project)
      * "Add a task for govind" -> PROJECT TASK OPERATION (Ask which project)
      * "Create a project and then create a task" -> CONVERSATIONAL CLARIFICATION
+     * "Create a project" -> PROJECT OPERATION (`create_project`)
 
 2. PERSONAL TASK ATTRIBUTES & LIFECYCLE:
    - Personal tasks have `isPersonal: True` and do not belong to any project (`project=None`).

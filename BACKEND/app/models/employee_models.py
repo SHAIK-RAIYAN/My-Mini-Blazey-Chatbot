@@ -2,13 +2,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 class CreateEmployeeArgs(BaseModel):
-    employmentType: str | None = Field(default="REGULAR", description="Employment type: REGULAR, CONTRACT, INTERN, or CONSULTANT")
-    employmentBasisId: str | None = Field(default="6a761828514350d27df5b501", description="Unique ID of the employment basis")
-    hireDate: str | None = Field(default=None, description="Hire date in ISO format (YYYY-MM-DD)")
     firstName: str = Field(..., description="First name of the employee")
     lastName: str = Field(..., description="Last name of the employee")
     workEmail: str = Field(..., description="Unique work email address of the employee")
-    departmentId: str | None = Field(default="66425e9f8ab88ca5ceb01a84", description="Unique ID of the employee department")
+    jobTitle: str | None = Field(default="Software Engineer", description="Job title or role of the employee")
+    employmentType: str | None = Field(default="REGULAR", description="Employment type: REGULAR, CONTRACT, INTERN, or CONSULTANT")
+    hireDate: str | None = Field(default=None, description="Hire date in ISO format (YYYY-MM-DD)")
 
 class SearchEmployeesArgs(BaseModel):
     search: str | None = Field(default=None, description="Search keyword across names, emails, or IDs in the employee directory")
