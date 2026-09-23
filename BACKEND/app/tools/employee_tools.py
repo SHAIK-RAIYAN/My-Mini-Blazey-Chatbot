@@ -9,6 +9,7 @@ from app.models.employee_models import (
     GetEmployeeArgs,
     UpdateEmployeeArgs,
     UpdatePersonalInfoArgs,
+    UpdateJobTitleArgs,
 )
 
 employee_client = EmployeeClient()
@@ -18,13 +19,12 @@ async def get_employee_profile(
     mongo_object_id: str,
     response_fields: str | None = None,
 ) -> str:
-    """Retrieve an employee profile directly using their MongoDB ObjectId."""
     try:
         result = await employee_client.get_employee(
             employee_id=mongo_object_id.strip(),
             response_fields=response_fields,
         )
-        return project_tool_output(result)
+        return project_tool_output(result, "employee")
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
@@ -38,7 +38,6 @@ async def search_employees(
     scope: str | None = "company",
     limit: int | None = 20,
 ) -> str:
-    """Search employee directory using provided filter parameters."""
     try:
         params: dict[str, Any] = {"scope": scope or "company"}
         if search is not None:
@@ -54,7 +53,7 @@ async def search_employees(
         if limit is not None:
             params["limit"] = limit
         result = await employee_client.list_employees(params=params)
-        return project_tool_output(result)
+        return project_tool_output(result, "employee")
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
@@ -68,7 +67,6 @@ async def create_employee(
     hireDate: str | None = None,
     departmentId: str | None = "66425e9f8ab88ca5ceb01a84",
 ) -> str:
-    """Create a new employee record in the directory."""
     try:
         payload: dict[str, Any] = {
             "employmentType": employmentType or "REGULAR",
@@ -94,7 +92,29 @@ async def create_employee(
             },
         }
         result = await employee_client.create_employee(payload)
-        return project_tool_output(result)
+        return project_tool_output(result, "employee")
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+@tool(description="Update an employee's job title or role in the organization", args_schema=UpdateJobTitleArgs)
+async def update_employee_job_title(
+    mongo_object_id: str,
+    job_title: str,
+    reason: str | None = None,
+) -> str:
+    try:
+        movement_payload = {
+            "employeeId": mongo_object_id.strip(),
+            "movementType": "ROLE_CHANGE",
+            "kind": "CORRECTION",
+            "to": {
+                "role": {"name": job_title.strip()}
+            },
+            "reason": reason or f"Job title updated to {job_title.strip()}"
+        }
+        await employee_client.create_movement(movement_payload)
+        emp_res = await employee_client.get_employee(mongo_object_id.strip())
+        return project_tool_output(emp_res, "employee")
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
@@ -103,10 +123,41 @@ async def update_employee_record(
     mongo_object_id: str,
     payload: dict[str, Any],
 ) -> str:
-    """Update root organizational fields on an employee record."""
     try:
-        result = await employee_client.update_employee(employee_id=mongo_object_id, payload=payload)
-        return project_tool_output(result)
+        clean_payload = dict(payload)
+        role_val = None
+        for key in ("jobTitle", "job_title", "designation", "role"):
+            if key in clean_payload:
+                val = clean_payload.pop(key)
+                if isinstance(val, dict):
+                    role_val = val.get("name") or val.get("role")
+                elif isinstance(val, str):
+                    role_val = val
+
+        ed = clean_payload.get("employmentDetail") or clean_payload.get("employmentDetails")
+        if isinstance(ed, dict):
+            for key in ("jobTitle", "job_title", "designation", "role"):
+                if key in ed:
+                    val = ed.pop(key)
+                    if isinstance(val, dict):
+                        role_val = val.get("name") or val.get("role")
+                    elif isinstance(val, str):
+                        role_val = val
+
+        if role_val:
+            await employee_client.create_movement({
+                "employeeId": mongo_object_id.strip(),
+                "movementType": "ROLE_CHANGE",
+                "kind": "CORRECTION",
+                "to": {"role": {"name": role_val.strip()}},
+                "reason": f"Role updated to {role_val.strip()}"
+            })
+
+        if clean_payload:
+            result = await employee_client.update_employee(employee_id=mongo_object_id, payload=clean_payload)
+        else:
+            result = await employee_client.get_employee(mongo_object_id.strip())
+        return project_tool_output(result, "employee")
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})
 
@@ -115,9 +166,8 @@ async def update_employee_personal_info(
     mongo_object_id: str,
     payload: dict[str, Any],
 ) -> str:
-    """Update personal information fields on an employee record."""
     try:
         result = await employee_client.update_personal_info(employee_id=mongo_object_id, payload=payload)
-        return project_tool_output(result)
+        return project_tool_output(result, "employee")
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)})

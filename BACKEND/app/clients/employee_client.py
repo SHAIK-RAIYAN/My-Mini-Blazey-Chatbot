@@ -66,3 +66,6 @@ class EmployeeClient(BaseAPIClient):
 
     async def update_personal_info(self, employee_id: str, payload: dict) -> dict:
         return await self.patch(f"/employees/{employee_id}/personal-info", json=payload)
+
+    async def create_movement(self, payload: dict) -> dict:
+        return await self.post("/movements", json_data=payload)

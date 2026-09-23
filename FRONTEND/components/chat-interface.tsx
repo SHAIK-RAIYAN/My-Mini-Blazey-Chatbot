@@ -18,6 +18,9 @@ import {
   Plus,
   History,
   Square,
+  CheckCircle2,
+  AlertCircle,
+  HelpCircle,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -36,23 +39,23 @@ import { useAgentChat } from "@/hooks/use-agent-chat"
 const PROMPT_SUGGESTIONS = [
   {
     icon: FolderGit2,
-    title: "My Profile",
-    prompt: "Search for my profile details.",
+    title: "Projects",
+    prompt: "List all active projects in the workspace.",
   },
   {
     icon: PlusCircle,
-    title: "Create Task",
-    prompt: "Create a personal task to review API logs.",
+    title: "Create Project",
+    prompt: "Create a new project named Cloud Platform starting today and ending next month.",
+  },
+  {
+    icon: ListTodo,
+    title: "Project Tasks",
+    prompt: "List tasks inside the NextGen AI Portal project.",
   },
   {
     icon: Users,
     title: "Team Members",
     prompt: "Search for employees in my team.",
-  },
-  {
-    icon: ListTodo,
-    title: "Recent Tasks",
-    prompt: "List 5 of my recent personal tasks.",
   },
 ]
 
@@ -63,10 +66,183 @@ function formatThreadId(id: string): string {
 
 function sanitizeAssistantContent(content: string): string {
   if (!content) return ""
-  return content
+  let text = content
+  if (text.startsWith("_json")) {
+    text = text.slice(5).trim()
+  }
+  return text
     .replace(/^\s*\|?\s*(?:MongoDB\s*(?:Object)?ID|_id|Mongo\s*ID)\s*\|.*$\n?/gim, "")
     .replace(/(?:,\s*)?(?:\(?\s*MongoDB\s*(?:Object)?ID\s*:\s*[0-9a-fA-F]{24}\s*\)?)/gi, "")
     .replace(/\b[0-9a-fA-F]{24}\b/g, "")
+}
+
+interface ParsedAgentPayload {
+  status?: "success" | "clarification_needed" | "error" | string
+  action?: string
+  message?: string
+  data?: any
+}
+
+function parseAgentJson(rawContent: string): ParsedAgentPayload | null {
+  if (!rawContent) return null
+  let cleaned = rawContent.trim()
+  if (cleaned.startsWith("```json")) {
+    cleaned = cleaned.slice(7)
+  }
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.slice(3)
+  }
+  if (cleaned.endsWith("```")) {
+    cleaned = cleaned.slice(0, -3)
+  }
+  if (cleaned.startsWith("_json")) {
+    cleaned = cleaned.slice(5).trim()
+  }
+  const firstBrace = cleaned.indexOf("{")
+  const lastBrace = cleaned.lastIndexOf("}")
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    return null
+  }
+  const jsonCandidate = cleaned.slice(firstBrace, lastBrace + 1)
+  try {
+    const parsed = JSON.parse(jsonCandidate)
+    if (parsed && typeof parsed === "object" && ("status" in parsed || "action" in parsed || "message" in parsed)) {
+      return parsed as ParsedAgentPayload
+    }
+  } catch {}
+  return null
+}
+
+function StructuredJsonMessage({
+  payload,
+}: {
+  payload: ParsedAgentPayload
+  rawContent?: string
+}) {
+  const status = payload.status || "info"
+  const isClarification = status === "clarification_needed"
+  const isError = status === "error"
+
+  const missingParams = payload.data?.missing_parameters || null
+  const dataItems = Array.isArray(payload.data)
+    ? payload.data
+    : Array.isArray(payload.data?.data)
+    ? payload.data.data
+    : null
+
+  const isSingleEntity = !dataItems && !missingParams && payload.data && typeof payload.data === "object" && Object.keys(payload.data).length > 0
+
+  return (
+    <Card size="sm" className="border-border bg-card shadow-xs overflow-hidden">
+      <CardContent className="p-4 flex flex-col gap-3 text-card-foreground">
+        {(isError || isClarification) && (
+          <div className="flex items-center gap-2 border-b border-border/50 pb-2">
+            {isClarification ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                <HelpCircle className="size-3.5" /> Clarification Needed
+              </span>
+            ) : isError ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                <AlertCircle className="size-3.5" /> Notice
+              </span>
+            ) : null}
+
+            {payload.action && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-muted/60 text-muted-foreground border border-border/60">
+                {payload.action.replace(/_/g, " ")}
+              </span>
+            )}
+          </div>
+        )}
+
+        {payload.message && (
+          <div className="text-sm leading-relaxed text-foreground">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {sanitizeAssistantContent(payload.message)}
+            </ReactMarkdown>
+          </div>
+        )}
+
+        {Array.isArray(missingParams) && missingParams.length > 0 && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 flex flex-col gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+              <HelpCircle className="size-3.5" />
+              <span>Required Parameters Needed:</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {missingParams.map((param: string, pIdx: number) => (
+                <span
+                  key={pIdx}
+                  className="px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs font-mono text-amber-800 dark:text-amber-300"
+                >
+                  {param}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {dataItems && dataItems.length > 0 && (
+          <div className="my-1 w-full overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-muted/60 border-b border-border text-foreground font-semibold">
+                <tr>
+                  <th className="px-3 py-2 whitespace-nowrap">ID / Code</th>
+                  <th className="px-3 py-2 whitespace-nowrap">Title / Name</th>
+                  <th className="px-3 py-2 whitespace-nowrap">Status</th>
+                  <th className="px-3 py-2 whitespace-nowrap">Priority</th>
+                  <th className="px-3 py-2 whitespace-nowrap">Assignee / PM</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40 text-foreground">
+                {dataItems.map((item: any, rowIdx: number) => (
+                  <tr key={rowIdx} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-3 py-2 font-mono font-medium text-foreground whitespace-nowrap">
+                      {item.id || item.projectId || item.employeeId || "—"}
+                    </td>
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      {item.title || item.name || `${item.firstName || ""} ${item.lastName || ""}`.trim() || "—"}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {item.status ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-muted border border-border">
+                          {item.status}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {item.priority ? (
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-muted border border-border">
+                          {item.priority}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                      {item.assignee || item.projectManager || item.workEmail || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {isSingleEntity && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 rounded-lg border border-border bg-muted/20 text-xs">
+            {Object.entries(payload.data).map(([k, v]) => {
+              if (k === "_id" || v === null || v === undefined || typeof v === "object") return null
+              return (
+                <div key={k} className="flex flex-col gap-0.5">
+                  <span className="font-mono text-[11px] text-muted-foreground uppercase">{k}</span>
+                  <span className="font-medium text-foreground">{String(v)}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 export function ChatInterface() {
@@ -442,61 +618,69 @@ export function ChatInterface() {
                     ) : (
                       <div className="flex flex-col gap-2 max-w-[90%] sm:max-w-[80%] w-full">
                         {msg.content ? (
-                          <Card size="sm" className="border-border bg-card shadow-xs">
-                            <CardContent className="p-3.5 text-sm leading-relaxed text-card-foreground">
-                              <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
-                                components={{
-                                  table: ({ children }) => (
-                                    <div className="my-3 w-full overflow-x-auto rounded-lg border border-border">
-                                      <table className="w-full text-left text-xs border-collapse">
-                                        {children}
-                                      </table>
-                                    </div>
-                                  ),
-                                  thead: ({ children }) => (
-                                    <thead className="bg-muted/60 border-b border-border text-foreground font-semibold">
-                                      {children}
-                                    </thead>
-                                  ),
-                                  tbody: ({ children }) => (
-                                    <tbody className="divide-y divide-border/40 text-foreground">
-                                      {children}
-                                    </tbody>
-                                  ),
-                                  tr: ({ children }) => (
-                                    <tr className="hover:bg-muted/30 transition-colors">
-                                      {children}
-                                    </tr>
-                                  ),
-                                  th: ({ children }) => (
-                                    <th className="px-3 py-2 font-semibold text-foreground whitespace-nowrap">
-                                      {children}
-                                    </th>
-                                  ),
-                                  td: ({ children }) => (
-                                    <td className="px-3 py-2 text-foreground/90 whitespace-nowrap">
-                                      {children}
-                                    </td>
-                                  ),
-                                  p: ({ children }) => (
-                                    <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
-                                  ),
-                                  ul: ({ children }) => (
-                                    <ul className="list-disc pl-5 my-2 space-y-1">{children}</ul>
-                                  ),
-                                  ol: ({ children }) => (
-                                    <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>
-                                  ),
-                                  strong: ({ children }) => (
-                                    <strong className="font-semibold text-foreground">{children}</strong>
-                                  ),
-                                }}
-                              >
-                                {sanitizeAssistantContent(msg.content)}
-                              </ReactMarkdown>
-                            </CardContent>
-                          </Card>
+                          (() => {
+                            const parsed = parseAgentJson(msg.content)
+                            if (parsed) {
+                              return <StructuredJsonMessage payload={parsed} rawContent={msg.content} />
+                            }
+                            return (
+                              <Card size="sm" className="border-border bg-card shadow-xs">
+                                <CardContent className="p-3.5 text-sm leading-relaxed text-card-foreground">
+                                  <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                      table: ({ children }) => (
+                                        <div className="my-3 w-full overflow-x-auto rounded-lg border border-border">
+                                          <table className="w-full text-left text-xs border-collapse">
+                                            {children}
+                                          </table>
+                                        </div>
+                                      ),
+                                      thead: ({ children }) => (
+                                        <thead className="bg-muted/60 border-b border-border text-foreground font-semibold">
+                                          {children}
+                                        </thead>
+                                      ),
+                                      tbody: ({ children }) => (
+                                        <tbody className="divide-y divide-border/40 text-foreground">
+                                          {children}
+                                        </tbody>
+                                      ),
+                                      tr: ({ children }) => (
+                                        <tr className="hover:bg-muted/30 transition-colors">
+                                          {children}
+                                        </tr>
+                                      ),
+                                      th: ({ children }) => (
+                                        <th className="px-3 py-2 font-semibold text-foreground whitespace-nowrap">
+                                          {children}
+                                        </th>
+                                      ),
+                                      td: ({ children }) => (
+                                        <td className="px-3 py-2 text-foreground/90 whitespace-nowrap">
+                                          {children}
+                                        </td>
+                                      ),
+                                      p: ({ children }) => (
+                                        <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+                                      ),
+                                      ul: ({ children }) => (
+                                        <ul className="list-disc pl-5 my-2 space-y-1">{children}</ul>
+                                      ),
+                                      ol: ({ children }) => (
+                                        <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>
+                                      ),
+                                      strong: ({ children }) => (
+                                        <strong className="font-semibold text-foreground">{children}</strong>
+                                      ),
+                                    }}
+                                  >
+                                    {sanitizeAssistantContent(msg.content)}
+                                  </ReactMarkdown>
+                                </CardContent>
+                              </Card>
+                            )
+                          })()
                         ) : isAnalyzing && idx === messages.length - 1 ? (
                           <Card size="sm" className="border-border bg-card shadow-xs">
                             <CardContent className="p-3.5 text-sm leading-relaxed text-card-foreground">

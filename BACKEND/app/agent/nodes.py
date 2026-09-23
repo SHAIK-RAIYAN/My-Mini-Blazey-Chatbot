@@ -10,13 +10,18 @@ from app.agent.state import AgentState
 from app.agent.prompts import SYSTEM_PROMPT
 from app.core.logger import get_logger
 from app.tools import (
-    create_personal_task,
+    create_project,
+    list_projects,
+    get_project,
+    update_project,
+    create_task,
     list_tasks,
     update_task_by_id,
     bulk_update_tasks,
     get_employee_profile,
     search_employees,
     create_employee,
+    update_employee_job_title,
     update_employee_record,
     update_employee_personal_info,
 )
@@ -24,13 +29,18 @@ from app.tools import (
 logger = get_logger()
 
 tools = [
-    create_personal_task,
+    create_project,
+    list_projects,
+    get_project,
+    update_project,
+    create_task,
     list_tasks,
     update_task_by_id,
     bulk_update_tasks,
     get_employee_profile,
     search_employees,
     create_employee,
+    update_employee_job_title,
     update_employee_record,
     update_employee_personal_info,
 ]

@@ -30,3 +30,8 @@ class UpdateEmployeeArgs(BaseModel):
 class UpdatePersonalInfoArgs(BaseModel):
     mongo_object_id: str = Field(..., description="Must be the 24-character hex MongoDB _id, NOT the human-readable employeeId")
     payload: dict[str, Any] = Field(..., description="Dictionary containing personal information fields to update")
+
+class UpdateJobTitleArgs(BaseModel):
+    mongo_object_id: str = Field(..., description="Must be the 24-character hex MongoDB _id of the employee, NOT the human-readable employeeId")
+    job_title: str = Field(..., description="New job title / role name (e.g. 'AI Engineer', 'Senior Software Engineer')")
+    reason: str | None = Field(default=None, description="Reason for the role or title change")

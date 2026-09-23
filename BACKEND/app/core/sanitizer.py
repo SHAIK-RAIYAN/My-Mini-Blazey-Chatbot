@@ -74,6 +74,36 @@ def _minimize_task(item: dict[str, Any]) -> dict[str, Any]:
         "assignee": assignee_val,
     }
 
+def _minimize_project(item: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        return item
+    raw_id = item.get("_id")
+    if raw_id is not None:
+        mongo_id = str(raw_id)
+    elif item.get("id") and len(str(item.get("id"))) == 24:
+        mongo_id = str(item.get("id"))
+    else:
+        mongo_id = ""
+
+    pm = item.get("projectManager")
+    if isinstance(pm, dict):
+        p_info = pm.get("personalInfo") or {}
+        pm_val = pm.get("legalFullName") or p_info.get("legalFullName") or f"{p_info.get('firstName', '')} {p_info.get('lastName', '')}".strip() or pm.get("name") or str(pm.get("_id", ""))
+    else:
+        pm_val = str(pm or "")
+
+    return {
+        "_id": mongo_id,
+        "projectId": str(item.get("projectId") or ""),
+        "name": item.get("name") or "",
+        "status": item.get("status") or "",
+        "priority": item.get("priority") or "",
+        "taskPrefix": item.get("taskPrefix") or "",
+        "startDate": str(item.get("startDate") or ""),
+        "endDate": str(item.get("endDate") or ""),
+        "projectManager": pm_val,
+    }
+
 def _minimize_record(item: dict[str, Any], entity_type: str | None = None) -> dict[str, Any]:
     if not isinstance(item, dict):
         return item
@@ -81,6 +111,10 @@ def _minimize_record(item: dict[str, Any], entity_type: str | None = None) -> di
         return _minimize_employee(item)
     if entity_type == "task":
         return _minimize_task(item)
+    if entity_type == "project":
+        return _minimize_project(item)
+    if any(k in item for k in ("projectId", "taskPrefix", "projectType")):
+        return _minimize_project(item)
     if any(k in item for k in ("personalInfo", "employmentDetail", "workEmail", "firstName", "lastName", "employeeId")):
         return _minimize_employee(item)
     if any(k in item for k in ("taskType", "taskNumber", "assignee", "title")):
@@ -101,14 +135,14 @@ def project_tool_output(data: Any, entity_type: str | None = None) -> str:
         records = data.get("data")
         if isinstance(records, list):
             total_records = len(records)
-            sliced = records[:5]
+            sliced = records[:25]
             minimized_records = [_minimize_record(r, entity_type) for r in sliced]
             result: dict[str, Any] = {
                 "statusCode": data.get("statusCode", 200),
                 "data": minimized_records,
             }
-            if total_records > 5:
-                result["meta"] = "Results truncated to top 5 to preserve token limits."
+            if total_records > 25:
+                result["meta"] = "Results truncated to top 25 to preserve token limits."
             for k in ("message", "total", "statusCode"):
                 if k in data and k not in result:
                     result[k] = data[k]
@@ -125,10 +159,10 @@ def project_tool_output(data: Any, entity_type: str | None = None) -> str:
         return json.dumps(_minimize_record(data, entity_type), separators=(",", ":"))
     if isinstance(data, list):
         total_records = len(data)
-        sliced = data[:5]
+        sliced = data[:25]
         minimized_records = [_minimize_record(r, entity_type) for r in sliced]
         result: dict[str, Any] = {"data": minimized_records}
-        if total_records > 5:
-            result["meta"] = "Results truncated to top 5 to preserve token limits."
+        if total_records > 25:
+            result["meta"] = "Results truncated to top 25 to preserve token limits."
         return json.dumps(result, separators=(",", ":"))
     return json.dumps(data, separators=(",", ":"))
